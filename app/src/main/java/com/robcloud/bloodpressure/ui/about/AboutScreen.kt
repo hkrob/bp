@@ -30,6 +30,10 @@ import com.robcloud.bloodpressure.update.UpdateViewModel
 
 /** Newest first; keep the three most recent versions here (older entries drop off). */
 private val CHANGELOG = listOf(
+    "2.2" to listOf(
+        "Fixed: History no longer shows \"No backup folder chosen yet\" when a backup folder is actually set (a display glitch after reinstalling).",
+        "Test release for the in-app update flow."
+    ),
     "2.1" to listOf(
         "Check for and install app updates from within the About tab (via GitHub Releases).",
         "Uses the internet for update checks only — no other network access."
@@ -38,11 +42,6 @@ private val CHANGELOG = listOf(
         "Doctor's report: share a printable PDF (summary, trend chart, readings table, notes) from the History tab.",
         "Note markers now sit directly on the systolic line in the History chart.",
         "Add reading tab tidied up — fits on one screen."
-    ),
-    "1.9" to listOf(
-        "\"Medication taken\" button on the Add reading tab quick-logs an MT note at the selected date & time.",
-        "Log tab: \"Show meds\" filter to show or hide Medication Taken events.",
-        "Changelog added to this tab."
     )
 )
 
