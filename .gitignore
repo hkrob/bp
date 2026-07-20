@@ -1,0 +1,34 @@
+# --- Build / IDE ---
+*.iml
+.gradle
+/.gradle
+/local.properties
+local.properties
+/.idea
+.idea/
+.DS_Store
+/build
+build/
+/captures
+.externalNativeBuild
+.cxx
+
+# --- Signing secrets: NEVER commit ---
+keystore.properties
+release.keystore
+*.keystore
+*.jks
+
+# --- Signed APKs: published as GitHub Release assets, not tracked in git ---
+*.apk
+
+# --- Local data snapshots: contain the user's REAL health data. NEVER commit ---
+*.db
+local.db
+migration-backup-*
+
+# --- Personal dev notes: contain email, health details, device IDs. Keep local only ---
+# (This is a PUBLIC repo. Remove these lines and add scrubbed copies if you want docs public.)
+/CLAUDE.md
+/docs/
+/SETUP.md

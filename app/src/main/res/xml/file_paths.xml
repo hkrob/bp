@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<paths>
+    <!-- Report PDFs are written to cacheDir/reports and shared read-only via FileProvider. -->
+    <cache-path name="reports" path="reports/" />
+    <!-- Downloaded update APKs live in cacheDir/updates and are handed to the system installer. -->
+    <cache-path name="updates" path="updates/" />
+</paths>

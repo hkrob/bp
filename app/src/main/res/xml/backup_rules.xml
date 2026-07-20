@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Backup rules for Android 11 and below (key/value + full backup framework). -->
+<full-backup-content>
+    <include domain="database" path="bp-tracker.db" />
+    <include domain="sharedpref" path="backup_prefs.xml" />
+    <include domain="sharedpref" path="reminder_prefs.xml" />
+    <include domain="sharedpref" path="theme_prefs.xml" />
+</full-backup-content>
