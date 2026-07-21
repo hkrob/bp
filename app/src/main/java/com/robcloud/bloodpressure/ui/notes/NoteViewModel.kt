@@ -37,7 +37,9 @@ class NoteViewModel(application: Application) : AndroidViewModel(application) {
     fun save() {
         val state = _uiState.value
         val details = state.details.trim()
-        if (details.isEmpty()) {
+        // Medication Taken notes stand on their own (type + time say it all); every other type is
+        // free text that needs content.
+        if (details.isEmpty() && state.noteType != NoteType.MEDICATION_TAKEN) {
             update { it.copy(errorMessage = "Enter some details for the note") }
             return
         }

@@ -3,6 +3,7 @@ package com.robcloud.bloodpressure.data
 import androidx.room.TypeConverter
 import java.time.Instant
 import java.time.LocalDate
+import java.time.LocalTime
 
 class Converters {
     @TypeConverter
@@ -28,4 +29,10 @@ class Converters {
 
     @TypeConverter
     fun toNoteTypeName(noteType: NoteType?): String? = noteType?.name
+
+    @TypeConverter
+    fun fromLocalTimeString(value: String?): LocalTime? = value?.let(LocalTime::parse)
+
+    @TypeConverter
+    fun toLocalTimeString(time: LocalTime?): String? = time?.toString()
 }

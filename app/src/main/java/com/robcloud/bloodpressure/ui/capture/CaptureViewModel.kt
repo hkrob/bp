@@ -10,7 +10,6 @@ import com.robcloud.bloodpressure.data.Note
 import com.robcloud.bloodpressure.data.NoteType
 import com.robcloud.bloodpressure.data.Reading
 import com.robcloud.bloodpressure.backup.BackupSyncWorker
-import com.robcloud.bloodpressure.ui.Formatters
 import com.robcloud.bloodpressure.ui.validateReading
 import com.robcloud.bloodpressure.widget.LastReadingWidgetProvider
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -92,18 +91,19 @@ class CaptureViewModel(application: Application) : AndroidViewModel(application)
     }
 
     /**
-     * Quick-logs a Medication Taken note using the date & time currently selected in the
-     * form. Notes are date-based, so the time-of-day is carried in the details text.
-     * Leaves any in-progress reading input untouched.
+     * Quick-logs a Medication Taken note using the date & time currently selected in the form,
+     * recording the real clock time so it sorts among readings in the Log. Leaves any in-progress
+     * reading input untouched.
      */
     fun saveMedicationTaken() {
-        val takenAt = _uiState.value.takenAt
+        val zoned = _uiState.value.takenAt.atZone(ZoneId.systemDefault())
         viewModelScope.launch {
             noteDao.insert(
                 Note(
-                    date = takenAt.atZone(ZoneId.systemDefault()).toLocalDate(),
+                    date = zoned.toLocalDate(),
                     noteType = NoteType.MEDICATION_TAKEN,
-                    details = "Taken at ${Formatters.time(takenAt)}"
+                    details = "",
+                    time = zoned.toLocalTime()
                 )
             )
             BackupSyncWorker.enqueue(app)

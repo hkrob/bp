@@ -6,6 +6,8 @@ import com.robcloud.bloodpressure.data.NoteType
 import com.robcloud.bloodpressure.data.Reading
 import java.time.Instant
 import java.time.LocalDate
+import java.time.LocalDateTime
+import java.time.LocalTime
 
 data class ParsedCsv(val readings: List<Reading>, val notes: List<Note>)
 
@@ -31,9 +33,9 @@ object Csv {
                 r.arm.name, "", ""
             )
         }
-        val noteRows = notes.sortedByDescending { it.date }.map { n ->
+        val noteRows = notes.sortedByDescending { it.date.atTime(it.time) }.map { n ->
             listOf(
-                "NOTE", n.id, n.date.toString(),
+                "NOTE", n.id, n.date.atTime(n.time).toString(),
                 "", "", "", "",
                 n.noteType.name, guardFormulaInjection(n.details)
             )
@@ -71,19 +73,34 @@ object Csv {
                             arm = Arm.valueOf(parts[6])
                         )
                     )
-                    "NOTE" -> notes.add(
-                        Note(
-                            id = parts[1],
-                            date = LocalDate.parse(parts[2]),
-                            noteType = NoteType.valueOf(parts[7]),
-                            details = unguardFormulaInjection(parts[8])
+                    "NOTE" -> {
+                        val (noteDate, noteTime) = parseNoteDateTime(parts[2])
+                        notes.add(
+                            Note(
+                                id = parts[1],
+                                date = noteDate,
+                                noteType = NoteType.valueOf(parts[7]),
+                                details = unguardFormulaInjection(parts[8]),
+                                time = noteTime
+                            )
                         )
-                    )
+                    }
                 }
             }
         }
         return ParsedCsv(readings, notes)
     }
+
+    /**
+     * Notes now store a full local date-time (e.g. 2026-07-20T16:24). Legacy backups wrote a
+     * date only (2026-07-20) — parse those and default the time to just-after-midnight so old
+     * files keep importing.
+     */
+    private fun parseNoteDateTime(value: String): Pair<LocalDate, LocalTime> =
+        runCatching {
+            val dt = LocalDateTime.parse(value)
+            dt.toLocalDate() to dt.toLocalTime()
+        }.getOrElse { LocalDate.parse(value) to LocalTime.of(0, 1) }
 
     private fun parseLegacyReading(parts: List<String>): Reading? {
         if (parts.size != LEGACY_HEADER.size) return null

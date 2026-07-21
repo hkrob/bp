@@ -174,7 +174,7 @@ fun EditNoteDialog(
                         TextButton(onClick = onDismiss) { Text("Cancel") }
                         TextButton(onClick = {
                             val trimmed = details.trim()
-                            if (trimmed.isEmpty()) {
+                            if (trimmed.isEmpty() && noteType != NoteType.MEDICATION_TAKEN) {
                                 errorMessage = "Enter some details for the note"
                             } else {
                                 onSave(note.copy(date = date, noteType = noteType, details = trimmed))

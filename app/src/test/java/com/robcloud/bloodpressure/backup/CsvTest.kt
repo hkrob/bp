@@ -10,6 +10,7 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.time.Instant
 import java.time.LocalDate
+import java.time.LocalTime
 
 class CsvTest {
 
@@ -26,8 +27,9 @@ class CsvTest {
         id: String = "n1",
         date: String = "2026-07-18",
         type: NoteType = NoteType.MEDICATION_CHANGED,
-        details: String = "plain details"
-    ) = Note(id, LocalDate.parse(date), type, details)
+        details: String = "plain details",
+        time: LocalTime = LocalTime.of(0, 1)
+    ) = Note(id, LocalDate.parse(date), type, details, time)
 
     @Test
     fun `round trip preserves readings and notes`() {
@@ -41,10 +43,30 @@ class CsvTest {
     }
 
     @Test
-    fun `medication taken notes round trip`() {
-        val mt = note(type = NoteType.MEDICATION_TAKEN, details = "Taken at 8:41 am")
+    fun `medication taken note preserves its time`() {
+        val mt = note(id = "mt", type = NoteType.MEDICATION_TAKEN, details = "", time = LocalTime.of(16, 24))
         val parsed = Csv.parse(Csv.write(emptyList(), listOf(mt)))
-        assertEquals(listOf(mt), parsed.notes)
+        assertEquals(mt, parsed.notes.single())
+        assertEquals(LocalTime.of(16, 24), parsed.notes.single().time)
+    }
+
+    @Test
+    fun `note time round trips for all types`() {
+        val notes = listOf(
+            note(id = "a", type = NoteType.OTHER, details = "morning", time = LocalTime.of(7, 5)),
+            note(id = "b", type = NoteType.MEDICATION_TAKEN, details = "", time = LocalTime.of(22, 30))
+        )
+        assertEquals(notes.toSet(), Csv.parse(Csv.write(emptyList(), notes)).notes.toSet())
+    }
+
+    @Test
+    fun `legacy date-only note imports at one minute past midnight`() {
+        val legacy = "record_type,id,date,systolic_mmhg,diastolic_mmhg,heart_rate_bpm,arm,note_type,note_details\n" +
+            "NOTE,n9,2026-07-18,,,,,OTHER,old note\n"
+        val parsed = Csv.parse(legacy)
+        assertEquals(1, parsed.notes.size)
+        assertEquals(LocalDate.parse("2026-07-18"), parsed.notes.single().date)
+        assertEquals(LocalTime.of(0, 1), parsed.notes.single().time)
     }
 
     @Test

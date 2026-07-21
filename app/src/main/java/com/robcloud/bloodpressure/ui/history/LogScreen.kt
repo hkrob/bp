@@ -43,8 +43,6 @@ import java.time.format.DateTimeFormatter
 private val logDateFormatter: DateTimeFormatter =
     DateTimeFormatter.ofPattern("dd/MM/yy HH:mm").withZone(ZoneId.systemDefault())
 
-private val noteLogDateFormatter: DateTimeFormatter = DateTimeFormatter.ofPattern("dd/MM/yy")
-
 private enum class ArmFilter(val label: String) {
     ALL("All"),
     LEFT("L"),
@@ -54,7 +52,7 @@ private enum class ArmFilter(val label: String) {
 private sealed class LogEntry(val sortInstant: Instant) {
     data class ReadingEntry(val reading: Reading) : LogEntry(reading.takenAt)
     data class NoteEntry(val note: Note) :
-        LogEntry(note.date.atStartOfDay(ZoneId.systemDefault()).toInstant())
+        LogEntry(note.date.atTime(note.time).atZone(ZoneId.systemDefault()).toInstant())
 }
 
 /**
@@ -249,24 +247,29 @@ private fun LogRow(
     }
 }
 
+/**
+ * Same one-line, fixed-width shape as [LogRow] — the note shares the DATE/TIME columns so it lines
+ * up with readings, and is set in the muted variant colour with a `[TYPE]` tag as the only cue.
+ * The content is the note's details, or the type label when there are none (e.g. Medication Taken).
+ */
 @Composable
 private fun NoteLogRow(note: Note, mono: TextStyle, onClick: () -> Unit) {
-    Column(
+    val instant = note.date.atTime(note.time).atZone(ZoneId.systemDefault()).toInstant()
+    val dateTime = logDateFormatter.format(instant)
+    val content = note.details.trim().ifEmpty { note.noteType.label }
+
+    Row(
         modifier = Modifier
             .fillMaxWidth()
-            .background(MaterialTheme.colorScheme.tertiaryContainer)
             .clickable(onClick = onClick)
             .padding(horizontal = 12.dp, vertical = 5.dp)
     ) {
+        Text("$dateTime ", style = mono)
         Text(
-            "${noteLogDateFormatter.format(note.date)}  NOTE [${note.noteType.abbreviation}] ${note.noteType.label}",
+            "[${note.noteType.abbreviation}] $content",
             style = mono.copy(fontWeight = FontWeight.Medium),
-            color = MaterialTheme.colorScheme.onTertiaryContainer
-        )
-        Text(
-            note.details,
-            style = mono,
-            color = MaterialTheme.colorScheme.onTertiaryContainer
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.weight(1f)
         )
     }
 }
