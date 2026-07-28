@@ -40,9 +40,12 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.material3.Surface
 import androidx.compose.material3.TextButton
+import com.robcloud.bloodpressure.update.UpdateViewModel
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
@@ -74,10 +77,15 @@ import com.robcloud.bloodpressure.ui.theme.StatusNormal
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun CaptureScreen(viewModel: CaptureViewModel = viewModel()) {
+fun CaptureScreen(
+    viewModel: CaptureViewModel = viewModel(),
+    updateViewModel: UpdateViewModel = viewModel()
+) {
     val state by viewModel.uiState.collectAsState()
     val lastReading by viewModel.lastReading.collectAsState()
     val previousReading by viewModel.previousReading.collectAsState()
+    val cachedRelease by updateViewModel.cachedRelease.collectAsState()
+    var updateBannerDismissed by remember { mutableStateOf(false) }
     val context = LocalContext.current
     val snackbarHostState = remember { SnackbarHostState() }
     val haptics = LocalHapticFeedback.current
@@ -243,12 +251,44 @@ fun CaptureScreen(viewModel: CaptureViewModel = viewModel()) {
                 Text("Medication taken")
             }
 
+            // Update banner — only visible when a newer version was found and not yet dismissed.
+            if (cachedRelease != null && !updateBannerDismissed) {
+                UpdateAvailableBanner(
+                    versionName = cachedRelease!!.versionName,
+                    onDismiss = { updateBannerDismissed = true }
+                )
+            }
+
             // Reference only — kept below the entry fields so capturing a reading never needs a scroll.
             lastReading?.let { LastReadingCard(it, previousReading) }
         }
 
         SnackbarHost(hostState = snackbarHostState) { data ->
             Snackbar(modifier = Modifier.padding(16.dp)) { Text(data.visuals.message) }
+        }
+    }
+}
+
+@Composable
+private fun UpdateAvailableBanner(versionName: String, onDismiss: () -> Unit) {
+    Card(
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.secondaryContainer),
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 10.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                "Update available: v$versionName — see About tab",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSecondaryContainer,
+                modifier = Modifier.weight(1f)
+            )
+            TextButton(onClick = onDismiss) {
+                Text("Dismiss", color = MaterialTheme.colorScheme.onSecondaryContainer)
+            }
         }
     }
 }

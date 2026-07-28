@@ -21,8 +21,24 @@ sealed interface UpdateUiState {
 }
 
 class UpdateViewModel(application: Application) : AndroidViewModel(application) {
+    private val store = UpdatePrefsStore(application)
+
     private val _state = MutableStateFlow<UpdateUiState>(UpdateUiState.Idle)
     val state: StateFlow<UpdateUiState> = _state.asStateFlow()
+
+    // Release cached by the last background check — non-null only when a newer version exists.
+    // Populated at startup so the Add Reading banner is instant (no network call on open).
+    private val _cachedRelease = MutableStateFlow<ReleaseInfo?>(null)
+    val cachedRelease: StateFlow<ReleaseInfo?> = _cachedRelease.asStateFlow()
+
+    init {
+        val cached = store.loadLatestRelease()
+        if (cached != null && UpdateManager.isNewer(cached.versionName, BuildConfig.VERSION_NAME)) {
+            _cachedRelease.value = cached
+        } else if (cached != null) {
+            store.clearLatestRelease()
+        }
+    }
 
     fun check() {
         if (!UpdateConfig.isConfigured) {
@@ -33,12 +49,20 @@ class UpdateViewModel(application: Application) : AndroidViewModel(application) 
         viewModelScope.launch {
             try {
                 val latest = UpdateManager.checkLatest()
-                _state.value = when {
-                    latest == null ->
-                        UpdateUiState.Error("Couldn't reach GitHub, or the latest release has no APK")
-                    UpdateManager.isNewer(latest.versionName, BuildConfig.VERSION_NAME) ->
-                        UpdateUiState.Available(latest)
-                    else -> UpdateUiState.UpToDate
+                when {
+                    latest == null -> {
+                        _state.value = UpdateUiState.Error("Couldn't reach GitHub, or the latest release has no APK")
+                    }
+                    UpdateManager.isNewer(latest.versionName, BuildConfig.VERSION_NAME) -> {
+                        store.saveLatestRelease(latest)
+                        _cachedRelease.value = latest
+                        _state.value = UpdateUiState.Available(latest)
+                    }
+                    else -> {
+                        store.clearLatestRelease()
+                        _cachedRelease.value = null
+                        _state.value = UpdateUiState.UpToDate
+                    }
                 }
             } catch (e: Exception) {
                 _state.value = UpdateUiState.Error(e.message ?: "Update check failed")

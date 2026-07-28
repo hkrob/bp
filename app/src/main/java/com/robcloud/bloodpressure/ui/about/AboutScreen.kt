@@ -11,25 +11,39 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.SegmentedButton
+import androidx.compose.material3.SegmentedButtonDefaults
+import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.robcloud.bloodpressure.BuildConfig
+import com.robcloud.bloodpressure.update.UpdateCheckFrequency
 import com.robcloud.bloodpressure.update.UpdateManager
+import com.robcloud.bloodpressure.update.UpdatePrefsStore
+import com.robcloud.bloodpressure.update.UpdateScheduler
 import com.robcloud.bloodpressure.update.UpdateUiState
 import com.robcloud.bloodpressure.update.UpdateViewModel
 
 /** Newest first; keep the three most recent versions here (older entries drop off). */
 private val CHANGELOG = listOf(
+    "2.5" to listOf(
+        "Update banner on Add Reading tab: a notification appears above Last Reading when a newer version is available.",
+        "Configurable update-check frequency: choose Never, Daily, Weekly, or Monthly in the About tab."
+    ),
     "2.4" to listOf(
         "Faster entry: typing the diastolic value now jumps straight to heart rate.",
         "The date and time reset to now every time the app is opened.",
@@ -39,10 +53,6 @@ private val CHANGELOG = listOf(
         "Log tab: notes and readings now share the same compact, time-stamped layout.",
         "Medication Taken notes record the exact time and appear in the correct order among readings.",
         "Other notes are timestamped at 00:01 so they sort consistently at the start of their day."
-    ),
-    "2.2" to listOf(
-        "Fixed: History no longer shows \"No backup folder chosen yet\" when a backup folder is actually set (a display glitch after reinstalling).",
-        "Test release for the in-app update flow."
     ),
 )
 
@@ -105,10 +115,13 @@ fun AboutScreen(updateViewModel: UpdateViewModel = viewModel()) {
     }
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun UpdateSection(viewModel: UpdateViewModel) {
     val state by viewModel.state.collectAsState()
     val context = LocalContext.current
+    val store = remember { UpdatePrefsStore(context) }
+    var frequency by remember { mutableStateOf(store.frequency) }
 
     Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)) {
         Column(
@@ -116,6 +129,24 @@ private fun UpdateSection(viewModel: UpdateViewModel) {
             verticalArrangement = Arrangement.spacedBy(10.dp)
         ) {
             Text("Updates", style = MaterialTheme.typography.titleMedium)
+
+            // Frequency picker
+            val frequencies = UpdateCheckFrequency.entries
+            SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
+                frequencies.forEachIndexed { index, f ->
+                    SegmentedButton(
+                        selected = frequency == f,
+                        onClick = {
+                            frequency = f
+                            store.frequency = f
+                            UpdateScheduler.schedule(context, f)
+                        },
+                        shape = SegmentedButtonDefaults.itemShape(index = index, count = frequencies.size)
+                    ) {
+                        Text(f.label)
+                    }
+                }
+            }
 
             when (val s = state) {
                 is UpdateUiState.Idle -> {

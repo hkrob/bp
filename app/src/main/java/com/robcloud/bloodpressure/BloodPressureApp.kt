@@ -5,6 +5,8 @@ import com.robcloud.bloodpressure.backup.BackupFolderStore
 import com.robcloud.bloodpressure.backup.BackupSyncManager
 import com.robcloud.bloodpressure.backup.BackupSyncWorker
 import com.robcloud.bloodpressure.data.AppDatabase
+import com.robcloud.bloodpressure.update.UpdatePrefsStore
+import com.robcloud.bloodpressure.update.UpdateScheduler
 
 class BloodPressureApp : Application() {
     val database by lazy { AppDatabase.getInstance(this) }
@@ -16,5 +18,6 @@ class BloodPressureApp : Application() {
     override fun onCreate() {
         super.onCreate()
         BackupSyncWorker.scheduleDaily(this)
+        UpdateScheduler.schedule(this, UpdatePrefsStore(this).frequency)
     }
 }
