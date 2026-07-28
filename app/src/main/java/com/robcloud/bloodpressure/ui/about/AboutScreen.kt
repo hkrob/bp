@@ -15,9 +15,6 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.SegmentedButton
-import androidx.compose.material3.SegmentedButtonDefaults
-import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
@@ -31,6 +28,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.robcloud.bloodpressure.BuildConfig
+import com.robcloud.bloodpressure.ui.EqualWidthSegmentedRow
 import com.robcloud.bloodpressure.update.UpdateCheckFrequency
 import com.robcloud.bloodpressure.update.UpdateManager
 import com.robcloud.bloodpressure.update.UpdatePrefsStore
@@ -40,17 +38,8 @@ import com.robcloud.bloodpressure.update.UpdateViewModel
 
 /** Newest first; keep the three most recent versions here (older entries drop off). */
 private val CHANGELOG = listOf(
-    "2.5.4" to listOf(
-        "Fixed: frequency buttons now truly have equal width across devices and orientations."
-    ),
-    "2.5.3" to listOf(
-        "Fixed: frequency buttons now have equal width in both portrait and landscape."
-    ),
-    "2.5.2" to listOf(
-        "Fixed: frequency buttons in the Updates section now have truly equal width."
-    ),
-    "2.5.1" to listOf(
-        "Fixed: segmented buttons in the Updates section now have equal width.",
+    "2.5.5" to listOf(
+        "Fixed for real: the Updates frequency buttons and the History/Log period buttons are now equal width in portrait, in landscape, and at large font sizes. The last option no longer stretches or wraps onto two lines.",
         "Show download file size in update states so you know what you're downloading."
     ),
     "2.5" to listOf(
@@ -144,23 +133,16 @@ private fun UpdateSection(viewModel: UpdateViewModel) {
             Text("Updates", style = MaterialTheme.typography.titleMedium)
 
             // Frequency picker
-            val frequencies = UpdateCheckFrequency.entries
-            SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
-                frequencies.forEachIndexed { index, f ->
-                    SegmentedButton(
-                        selected = frequency == f,
-                        onClick = {
-                            frequency = f
-                            store.frequency = f
-                            UpdateScheduler.schedule(context, f)
-                        },
-                        shape = SegmentedButtonDefaults.itemShape(index = index, count = frequencies.size),
-                        modifier = Modifier.weight(1f, fill = true)
-                    ) {
-                        Text(f.label, modifier = Modifier.padding(0.dp))
-                    }
+            EqualWidthSegmentedRow(
+                options = UpdateCheckFrequency.entries,
+                selected = frequency,
+                label = { it.label },
+                onSelect = { f ->
+                    frequency = f
+                    store.frequency = f
+                    UpdateScheduler.schedule(context, f)
                 }
-            }
+            )
 
             when (val s = state) {
                 is UpdateUiState.Idle -> {

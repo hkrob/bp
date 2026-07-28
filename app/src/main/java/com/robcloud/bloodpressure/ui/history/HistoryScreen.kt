@@ -18,9 +18,6 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.SegmentedButton
-import androidx.compose.material3.SegmentedButtonDefaults
-import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
@@ -40,6 +37,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.robcloud.bloodpressure.backup.StorageHost
 import com.robcloud.bloodpressure.data.BpCategory
 import com.robcloud.bloodpressure.data.Reading
+import com.robcloud.bloodpressure.ui.EqualWidthSegmentedRow
 import com.robcloud.bloodpressure.ui.Formatters
 import com.robcloud.bloodpressure.ui.theme.StatusElevated
 import kotlin.math.roundToInt
@@ -136,17 +134,12 @@ fun HistoryScreen(storageHost: StorageHost, viewModel: HistoryViewModel = viewMo
 
                 SyncStatusLine(state)
 
-                SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
-                    Period.entries.forEachIndexed { index, period ->
-                        SegmentedButton(
-                            selected = state.period == period,
-                            onClick = { viewModel.selectPeriod(period) },
-                            shape = SegmentedButtonDefaults.itemShape(index = index, count = Period.entries.size)
-                        ) {
-                            Text(period.label)
-                        }
-                    }
-                }
+                EqualWidthSegmentedRow(
+                    options = Period.entries,
+                    selected = state.period,
+                    label = { it.label },
+                    onSelect = viewModel::selectPeriod
+                )
 
                 PeriodStatsRow(state.readings)
 

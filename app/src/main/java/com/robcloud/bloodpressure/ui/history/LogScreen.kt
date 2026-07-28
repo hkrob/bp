@@ -35,6 +35,7 @@ import com.robcloud.bloodpressure.data.Arm
 import com.robcloud.bloodpressure.data.Note
 import com.robcloud.bloodpressure.data.NoteType
 import com.robcloud.bloodpressure.data.Reading
+import com.robcloud.bloodpressure.ui.EqualWidthSegmentedRow
 import com.robcloud.bloodpressure.ui.notes.EditNoteDialog
 import java.time.Instant
 import java.time.ZoneId
@@ -129,17 +130,13 @@ fun LogScreen(viewModel: HistoryViewModel = viewModel()) {
                 .padding(horizontal = 12.dp, vertical = 8.dp),
             horizontalArrangement = Arrangement.spacedBy(8.dp)
         ) {
-            SingleChoiceSegmentedButtonRow(modifier = Modifier.weight(1f)) {
-                Period.entries.forEachIndexed { index, p ->
-                    SegmentedButton(
-                        selected = period == p,
-                        onClick = { period = p },
-                        shape = SegmentedButtonDefaults.itemShape(index = index, count = Period.entries.size)
-                    ) {
-                        Text(p.label, style = MaterialTheme.typography.bodyMedium)
-                    }
-                }
-            }
+            EqualWidthSegmentedRow(
+                options = Period.entries,
+                selected = period,
+                label = { it.label },
+                onSelect = { period = it },
+                modifier = Modifier.weight(1f)
+            )
         }
         Row(
             modifier = Modifier
