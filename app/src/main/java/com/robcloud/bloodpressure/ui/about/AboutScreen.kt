@@ -40,6 +40,9 @@ import com.robcloud.bloodpressure.update.UpdateViewModel
 
 /** Newest first; keep the three most recent versions here (older entries drop off). */
 private val CHANGELOG = listOf(
+    "2.5.3" to listOf(
+        "Fixed: frequency buttons now have equal width in both portrait and landscape."
+    ),
     "2.5.2" to listOf(
         "Fixed: frequency buttons in the Updates section now have truly equal width."
     ),
@@ -149,9 +152,9 @@ private fun UpdateSection(viewModel: UpdateViewModel) {
                             UpdateScheduler.schedule(context, f)
                         },
                         shape = SegmentedButtonDefaults.itemShape(index = index, count = frequencies.size),
-                        modifier = Modifier.weight(1f).fillMaxWidth()
+                        modifier = Modifier.weight(1f)
                     ) {
-                        Text(f.label, modifier = Modifier.fillMaxWidth())
+                        Text(f.label)
                     }
                 }
             }
