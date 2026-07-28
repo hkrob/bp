@@ -15,8 +15,8 @@ sealed interface UpdateUiState {
     data object Checking : UpdateUiState
     data object UpToDate : UpdateUiState
     data class Available(val release: ReleaseInfo) : UpdateUiState
-    data class Downloading(val progress: Int) : UpdateUiState
-    data class ReadyToInstall(val file: File, val versionName: String) : UpdateUiState
+    data class Downloading(val progress: Int, val sizeBytes: Long = 0L) : UpdateUiState
+    data class ReadyToInstall(val file: File, val versionName: String, val sizeBytes: Long = 0L) : UpdateUiState
     data class Error(val message: String) : UpdateUiState
 }
 
@@ -71,13 +71,13 @@ class UpdateViewModel(application: Application) : AndroidViewModel(application) 
     }
 
     fun download(release: ReleaseInfo) {
-        _state.value = UpdateUiState.Downloading(0)
+        _state.value = UpdateUiState.Downloading(0, release.apkSizeBytes)
         viewModelScope.launch {
             try {
                 val file = UpdateManager.download(getApplication(), release) { progress ->
-                    _state.value = UpdateUiState.Downloading(progress)
+                    _state.value = UpdateUiState.Downloading(progress, release.apkSizeBytes)
                 }
-                _state.value = UpdateUiState.ReadyToInstall(file, release.versionName)
+                _state.value = UpdateUiState.ReadyToInstall(file, release.versionName, release.apkSizeBytes)
             } catch (e: Exception) {
                 _state.value = UpdateUiState.Error("Download failed: ${e.message}")
             }

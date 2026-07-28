@@ -188,13 +188,15 @@ private fun UpdateSection(viewModel: UpdateViewModel) {
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
+                    val sizeText = if (s.release.apkSizeBytes > 0) " (${formatBytes(s.release.apkSizeBytes)})" else ""
                     Button(onClick = { viewModel.download(s.release) }) {
-                        Text("Download & install")
+                        Text("Download & install$sizeText")
                     }
                 }
 
                 is UpdateUiState.Downloading -> {
-                    Text("Downloading… ${s.progress}%", style = MaterialTheme.typography.bodyMedium)
+                    val sizeText = if (s.sizeBytes > 0) " (${formatBytes(s.sizeBytes)})" else ""
+                    Text("Downloading… ${s.progress}%$sizeText", style = MaterialTheme.typography.bodyMedium)
                     LinearProgressIndicator(
                         progress = { s.progress / 100f },
                         modifier = Modifier.fillMaxWidth()
@@ -202,8 +204,9 @@ private fun UpdateSection(viewModel: UpdateViewModel) {
                 }
 
                 is UpdateUiState.ReadyToInstall -> {
+                    val sizeText = if (s.sizeBytes > 0) " (${formatBytes(s.sizeBytes)})" else ""
                     Text(
-                        "Downloaded version ${s.versionName}.",
+                        "Downloaded version ${s.versionName}$sizeText.",
                         style = MaterialTheme.typography.bodyMedium
                     )
                     Button(onClick = {
@@ -230,5 +233,14 @@ private fun UpdateSection(viewModel: UpdateViewModel) {
                 }
             }
         }
+    }
+}
+
+private fun formatBytes(bytes: Long): String {
+    return when {
+        bytes >= 1_000_000_000 -> String.format("%.1f GB", bytes / 1_000_000_000.0)
+        bytes >= 1_000_000 -> String.format("%.1f MB", bytes / 1_000_000.0)
+        bytes >= 1_000 -> String.format("%.0f KB", bytes / 1_000.0)
+        else -> "$bytes B"
     }
 }
