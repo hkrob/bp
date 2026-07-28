@@ -30,6 +30,11 @@ import com.robcloud.bloodpressure.update.UpdateViewModel
 
 /** Newest first; keep the three most recent versions here (older entries drop off). */
 private val CHANGELOG = listOf(
+    "2.4" to listOf(
+        "Faster entry: typing the diastolic value now jumps straight to heart rate.",
+        "The date and time reset to now every time the app is opened.",
+        "\"Last reading\" moved below the entry fields, so a new reading fits without scrolling."
+    ),
     "2.3" to listOf(
         "Log tab: notes and readings now share the same compact, time-stamped layout.",
         "Medication Taken notes record the exact time and appear in the correct order among readings.",
@@ -39,10 +44,6 @@ private val CHANGELOG = listOf(
         "Fixed: History no longer shows \"No backup folder chosen yet\" when a backup folder is actually set (a display glitch after reinstalling).",
         "Test release for the in-app update flow."
     ),
-    "2.1" to listOf(
-        "Check for and install app updates from within the About tab (via GitHub Releases).",
-        "Uses the internet for update checks only — no other network access."
-    )
 )
 
 @Composable

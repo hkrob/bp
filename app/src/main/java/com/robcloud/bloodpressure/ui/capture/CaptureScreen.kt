@@ -36,6 +36,7 @@ import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.material3.Button
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -54,11 +55,17 @@ import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.robcloud.bloodpressure.data.Arm
 import com.robcloud.bloodpressure.data.Reading
 import com.robcloud.bloodpressure.data.bpCategory
+import com.robcloud.bloodpressure.ui.DIASTOLIC_MAX
 import com.robcloud.bloodpressure.ui.Formatters
+import com.robcloud.bloodpressure.ui.SYSTOLIC_MAX
+import com.robcloud.bloodpressure.ui.isFieldComplete
 import com.robcloud.bloodpressure.ui.history.categoryColor
 import com.robcloud.bloodpressure.ui.showDatePicker
 import com.robcloud.bloodpressure.ui.showTimePicker
@@ -97,6 +104,19 @@ fun CaptureScreen(viewModel: CaptureViewModel = viewModel()) {
         CrisisWarningDialog(bp = bp, onDismiss = viewModel::consumeCrisisWarning)
     }
 
+    // Stamp the form with the current date & time whenever this screen comes to the foreground —
+    // on app launch/resume and on returning to this tab (adding the observer while already RESUMED
+    // replays ON_RESUME). The date/time pickers are plain Dialogs, which don't change the activity
+    // lifecycle, so a manually chosen date is never overwritten while the user stays on the screen.
+    val lifecycleOwner = LocalLifecycleOwner.current
+    DisposableEffect(lifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) viewModel.setTakenAtNow()
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
+
     Column(Modifier.fillMaxSize()) {
         Column(
             modifier = Modifier
@@ -111,8 +131,6 @@ fun CaptureScreen(viewModel: CaptureViewModel = viewModel()) {
                 style = MaterialTheme.typography.headlineMedium
             )
 
-            lastReading?.let { LastReadingCard(it, previousReading) }
-
             Row(
                 horizontalArrangement = Arrangement.spacedBy(12.dp),
                 modifier = Modifier.fillMaxWidth()
@@ -121,7 +139,7 @@ fun CaptureScreen(viewModel: CaptureViewModel = viewModel()) {
                     value = state.systolic,
                     onValueChange = { value ->
                         viewModel.updateSystolic(value)
-                        if (value.count { it.isDigit() } >= 3) diastolicFocus.requestFocus()
+                        if (isFieldComplete(value, SYSTOLIC_MAX)) diastolicFocus.requestFocus()
                     },
                     label = { Text("Systolic") },
                     suffix = { Text("mmHg") },
@@ -136,7 +154,7 @@ fun CaptureScreen(viewModel: CaptureViewModel = viewModel()) {
                     value = state.diastolic,
                     onValueChange = { value ->
                         viewModel.updateDiastolic(value)
-                        if (value.count { it.isDigit() } >= 3) heartRateFocus.requestFocus()
+                        if (isFieldComplete(value, DIASTOLIC_MAX)) heartRateFocus.requestFocus()
                     },
                     label = { Text("Diastolic") },
                     suffix = { Text("mmHg") },
@@ -224,6 +242,9 @@ fun CaptureScreen(viewModel: CaptureViewModel = viewModel()) {
                 Icon(Icons.Filled.Medication, contentDescription = null, modifier = Modifier.padding(end = 8.dp))
                 Text("Medication taken")
             }
+
+            // Reference only — kept below the entry fields so capturing a reading never needs a scroll.
+            lastReading?.let { LastReadingCard(it, previousReading) }
         }
 
         SnackbarHost(hostState = snackbarHostState) { data ->
