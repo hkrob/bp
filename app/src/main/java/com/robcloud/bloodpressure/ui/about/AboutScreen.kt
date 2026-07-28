@@ -40,6 +40,10 @@ import com.robcloud.bloodpressure.update.UpdateViewModel
 
 /** Newest first; keep the three most recent versions here (older entries drop off). */
 private val CHANGELOG = listOf(
+    "2.5.1" to listOf(
+        "Fixed: segmented buttons in the Updates section now have equal width.",
+        "Show download file size in update states so you know what you're downloading."
+    ),
     "2.5" to listOf(
         "Update banner on Add Reading tab: a notification appears above Last Reading when a newer version is available.",
         "Configurable update-check frequency: choose Never, Daily, Weekly, or Monthly in the About tab."
