@@ -141,7 +141,8 @@ private fun UpdateSection(viewModel: UpdateViewModel) {
                             store.frequency = f
                             UpdateScheduler.schedule(context, f)
                         },
-                        shape = SegmentedButtonDefaults.itemShape(index = index, count = frequencies.size)
+                        shape = SegmentedButtonDefaults.itemShape(index = index, count = frequencies.size),
+                        modifier = Modifier.weight(1f)
                     ) {
                         Text(f.label)
                     }
