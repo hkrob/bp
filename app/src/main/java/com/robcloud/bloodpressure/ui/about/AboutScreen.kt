@@ -40,6 +40,9 @@ import com.robcloud.bloodpressure.update.UpdateViewModel
 
 /** Newest first; keep the three most recent versions here (older entries drop off). */
 private val CHANGELOG = listOf(
+    "2.5.2" to listOf(
+        "Fixed: frequency buttons in the Updates section now have truly equal width."
+    ),
     "2.5.1" to listOf(
         "Fixed: segmented buttons in the Updates section now have equal width.",
         "Show download file size in update states so you know what you're downloading."
