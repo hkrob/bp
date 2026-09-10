@@ -85,10 +85,22 @@ if ($LASTEXITCODE -eq 0) { throw "Release $Tag already exists — bump the versi
 
 # --- build -------------------------------------------------------------------------
 $env:JAVA_HOME = $JavaHome
+
+Step 'Checking the JDK'
+$javaExe = Join-Path $JavaHome 'bin\java.exe'
+if (-not (Test-Path $javaExe)) { throw "No JDK found at $JavaHome. Point `$JavaHome at a JDK 21 or newer." }
+$javaOut = (& $javaExe -version 2>&1 | Out-String)
+if ($javaOut -notmatch 'version "(\d+)') { throw "Could not read the JDK version from:`n$javaOut" }
+$javaMajor = [int]$Matches[1]
+if ($javaMajor -lt 21) {
+    throw "JDK $javaMajor at $JavaHome is too old. The Paparazzi screenshot-test plugin declares a JVM 21 minimum, so Gradle cannot resolve its classpath on anything older. Point `$JavaHome at a JDK 21+ JBR or install one."
+}
+Note "JDK $javaMajor"
+
 if (-not $SkipTests) {
     Step 'Running unit tests'
-    & (Join-Path $Root 'gradlew.bat') :app:testDebugUnitTest --no-daemon -p $Root | Out-Null
-    if ($LASTEXITCODE -ne 0) { throw 'Unit tests failed — not publishing.' }
+    & (Join-Path $Root 'gradlew.bat') :app:testDebugUnitTest :app:verifyPaparazziDebug --no-daemon -p $Root | Out-Null
+    if ($LASTEXITCODE -ne 0) { throw 'Unit tests or screenshot snapshots failed — not publishing.' }
     Note 'green'
 }
 

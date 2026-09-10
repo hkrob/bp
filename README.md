@@ -28,7 +28,10 @@ Access Framework — no account sign-in inside the app.
 
 ## Build
 
-Requires JDK 17 (Android Studio's bundled JBR works well).
+Requires JDK 21. The Paparazzi screenshot-test plugin declares a JVM 21 minimum, so an
+older JDK fails during configuration, before anything compiles. Android Studio's bundled
+JBR works if it is 21 or newer — check with `java -version` from
+`<studio>/jbr/bin`. Compiled bytecode still targets Java 17.
 
 ```
 ./gradlew :app:assembleDebug        # debug APK

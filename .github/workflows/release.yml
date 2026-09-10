@@ -36,7 +36,9 @@ jobs:
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
-          java-version: "17"
+          # 21, not 17: the Paparazzi 2.x Gradle plugin declares a JVM 21 minimum, so the
+          # build cannot even resolve its classpath on 17.
+          java-version: "21"
           cache: gradle
 
       - uses: android-actions/setup-android@v3
