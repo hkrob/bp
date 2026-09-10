@@ -9,15 +9,26 @@ Four secrets are needed. Set them from the machine that holds `release.keystore`
 key material into a chat, an issue, or a commit.
 
 ```powershell
-gh secret set RELEASE_KEYSTORE_B64  --repo hkrob/bp `
-  --body ([Convert]::ToBase64String([IO.File]::ReadAllBytes("release.keystore")))
+cd C:\path\to\bp                     # the folder holding release.keystore
+gh auth status                        # must be authenticated
+
+gh secret set RELEASE_KEYSTORE_B64 --repo hkrob/bp `
+  --body ([Convert]::ToBase64String([IO.File]::ReadAllBytes((Resolve-Path .\release.keystore))))
+
 gh secret set RELEASE_STORE_PASSWORD --repo hkrob/bp
 gh secret set RELEASE_KEY_ALIAS      --repo hkrob/bp
 gh secret set RELEASE_KEY_PASSWORD   --repo hkrob/bp
 ```
 
-The last three prompt for the value, so it stays off your shell history. They must match the
-`storePassword`, `keyAlias` and `keyPassword` in your local `keystore.properties`.
+`Resolve-Path` matters: .NET methods such as `ReadAllBytes` resolve a relative path against the
+process working directory, which is not necessarily the directory PowerShell has `cd`-ed to.
+Passing a bare `"release.keystore"` can silently read from the wrong place or throw.
+
+The last three commands prompt for the value, so it never reaches your shell history. They must
+match the `storePassword`, `keyAlias` and `keyPassword` in your local `keystore.properties`.
+
+Check the result with `gh secret list --repo hkrob/bp` — it shows names and update times only,
+never values.
 
 ## Cutting a release
 
