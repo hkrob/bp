@@ -38,6 +38,10 @@ import com.robcloud.bloodpressure.update.UpdateViewModel
 
 /** Newest first; keep the three most recent versions here (older entries drop off). */
 private val CHANGELOG = listOf(
+    "2.5.6" to listOf(
+        "The equal-width button fix from 2.5.5 is now locked in by automated screenshot tests, so that sizing bug cannot quietly come back in a future release.",
+        "No other changes — this is a maintenance release."
+    ),
     "2.5.5" to listOf(
         "Fixed for real: the Updates frequency buttons and the History/Log period buttons are now equal width in portrait, in landscape, and at large font sizes. The last option no longer stretches or wraps onto two lines.",
         "Show download file size in update states so you know what you're downloading."
