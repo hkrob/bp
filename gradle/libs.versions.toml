@@ -12,6 +12,7 @@ documentfile = "1.1.0"
 kotlinxCoroutines = "1.11.0"
 vico = "3.2.3"
 junit = "4.13.2"
+paparazzi = "2.0.0-alpha05"
 
 [libraries]
 core-ktx = { group = "androidx.core", name = "core-ktx", version.ref = "coreKtx" }
@@ -45,3 +46,4 @@ android-application = { id = "com.android.application", version.ref = "agp" }
 kotlin-android = { id = "org.jetbrains.kotlin.android", version.ref = "kotlin" }
 kotlin-compose = { id = "org.jetbrains.kotlin.plugin.compose", version.ref = "kotlin" }
 ksp = { id = "com.google.devtools.ksp", version.ref = "ksp" }
+paparazzi = { id = "app.cash.paparazzi", version.ref = "paparazzi" }

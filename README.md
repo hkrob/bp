@@ -36,6 +36,25 @@ Requires JDK 17 (Android Studio's bundled JBR works well).
 ./gradlew :app:assembleRelease      # release APK (needs signing config; see below)
 ```
 
+## Screenshot tests
+
+Compose screens are pinned by [Paparazzi](https://github.com/cashapp/paparazzi) snapshots, which
+render on the JVM — no emulator or device needed.
+
+```
+./gradlew :app:verifyPaparazziDebug  # compare against committed baselines
+./gradlew :app:recordPaparazziDebug  # re-record after an intentional UI change
+```
+
+Baselines live in `app/src/test/snapshots/images` and are committed. When `verify` fails it
+writes expected/diff/actual images to `app/build/paparazzi/failures` and an HTML report to
+`app/build/reports/paparazzi`. Review those before re-recording — a diff is a regression until
+you have decided otherwise.
+
+Current coverage is `EqualWidthSegmentedRow` across themes, selection positions, option counts,
+narrow and landscape screens, and a 2x accessibility font scale. `ThemeMode.SYSTEM` is
+deliberately excluded: it resolves to wallpaper-derived dynamic colour and is not reproducible.
+
 Release signing expects `keystore.properties` and a keystore at the project root (both
 git-ignored). Create `keystore.properties` with `storeFile`, `storePassword`, `keyAlias`,
 and `keyPassword`.
