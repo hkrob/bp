@@ -102,8 +102,8 @@ fun LogScreen(viewModel: HistoryViewModel = viewModel()) {
         )
     }
 
-    val filteredReadings = remember(state.allReadings, period, armFilter) {
-        filterByPeriod(state.allReadings, period).filter { reading ->
+    val filteredReadings = remember(state.allReadings, state.allNotes, period, armFilter) {
+        filterByPeriod(state.allReadings, period, state.allNotes).filter { reading ->
             when (armFilter) {
                 ArmFilter.ALL -> true
                 ArmFilter.LEFT -> reading.arm == Arm.LEFT

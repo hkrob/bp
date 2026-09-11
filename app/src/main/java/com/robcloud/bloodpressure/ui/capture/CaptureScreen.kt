@@ -27,9 +27,6 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.SegmentedButton
-import androidx.compose.material3.SegmentedButtonDefaults
-import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.Snackbar
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
@@ -66,6 +63,7 @@ import com.robcloud.bloodpressure.data.Arm
 import com.robcloud.bloodpressure.data.Reading
 import com.robcloud.bloodpressure.data.bpCategory
 import com.robcloud.bloodpressure.ui.DIASTOLIC_MAX
+import com.robcloud.bloodpressure.ui.EqualWidthSegmentedRow
 import com.robcloud.bloodpressure.ui.Formatters
 import com.robcloud.bloodpressure.ui.SYSTOLIC_MAX
 import com.robcloud.bloodpressure.ui.isFieldComplete
@@ -177,32 +175,33 @@ fun CaptureScreen(
                 )
             }
 
-            OutlinedTextField(
-                value = state.heartRate,
-                onValueChange = viewModel::updateHeartRate,
-                label = { Text("Heart rate") },
-                suffix = { Text("bpm") },
-                leadingIcon = { Icon(Icons.Filled.Favorite, contentDescription = null) },
-                keyboardOptions = KeyboardOptions(
-                    keyboardType = KeyboardType.Number,
-                    imeAction = ImeAction.Done
-                ),
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .focusRequester(heartRateFocus),
-                singleLine = true
-            )
-
-            SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
-                Arm.entries.forEachIndexed { index, arm ->
-                    SegmentedButton(
-                        selected = state.arm == arm,
-                        onClick = { viewModel.updateArm(arm) },
-                        shape = SegmentedButtonDefaults.itemShape(index = index, count = Arm.entries.size)
-                    ) {
-                        Text(if (arm == Arm.LEFT) "Left arm" else "Right arm")
-                    }
-                }
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                OutlinedTextField(
+                    value = state.heartRate,
+                    onValueChange = viewModel::updateHeartRate,
+                    label = { Text("Heart rate") },
+                    suffix = { Text("bpm") },
+                    leadingIcon = { Icon(Icons.Filled.Favorite, contentDescription = null) },
+                    keyboardOptions = KeyboardOptions(
+                        keyboardType = KeyboardType.Number,
+                        imeAction = ImeAction.Done
+                    ),
+                    modifier = Modifier
+                        .weight(1f)
+                        .focusRequester(heartRateFocus),
+                    singleLine = true
+                )
+                EqualWidthSegmentedRow(
+                    options = Arm.entries,
+                    selected = state.arm,
+                    label = { if (it == Arm.LEFT) "Left" else "Right" },
+                    onSelect = viewModel::updateArm,
+                    modifier = Modifier.weight(1f)
+                )
             }
 
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {

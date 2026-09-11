@@ -38,6 +38,11 @@ import com.robcloud.bloodpressure.update.UpdateViewModel
 
 /** Newest first; keep the three most recent versions here (older entries drop off). */
 private val CHANGELOG = listOf(
+    "2.5.7" to listOf(
+        "New \"Since Check Up\" filter on the History and Log tabs, showing everything logged since your most recent Check Up note.",
+        "Add Reading: Heart rate and the arm selector now share one row, so the form fits without scrolling on more screens.",
+        "History chart no longer marks note dates — a cleaner view of just the readings."
+    ),
     "2.5.6" to listOf(
         "The equal-width button fix from 2.5.5 is now locked in by automated screenshot tests, so that sizing bug cannot quietly come back in a future release.",
         "No other changes — this is a maintenance release."
@@ -45,20 +50,6 @@ private val CHANGELOG = listOf(
     "2.5.5" to listOf(
         "Fixed for real: the Updates frequency buttons and the History/Log period buttons are now equal width in portrait, in landscape, and at large font sizes. The last option no longer stretches or wraps onto two lines.",
         "Show download file size in update states so you know what you're downloading."
-    ),
-    "2.5" to listOf(
-        "Update banner on Add Reading tab: a notification appears above Last Reading when a newer version is available.",
-        "Configurable update-check frequency: choose Never, Daily, Weekly, or Monthly in the About tab."
-    ),
-    "2.4" to listOf(
-        "Faster entry: typing the diastolic value now jumps straight to heart rate.",
-        "The date and time reset to now every time the app is opened.",
-        "\"Last reading\" moved below the entry fields, so a new reading fits without scrolling."
-    ),
-    "2.3" to listOf(
-        "Log tab: notes and readings now share the same compact, time-stamped layout.",
-        "Medication Taken notes record the exact time and appear in the correct order among readings.",
-        "Other notes are timestamped at 00:01 so they sort consistently at the start of their day."
     ),
 )
 

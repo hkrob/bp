@@ -12,6 +12,7 @@ import com.robcloud.bloodpressure.backup.StorageHost
 import com.robcloud.bloodpressure.data.DeletedNote
 import com.robcloud.bloodpressure.data.DeletedReading
 import com.robcloud.bloodpressure.data.Note
+import com.robcloud.bloodpressure.data.NoteType
 import com.robcloud.bloodpressure.data.Reading
 import com.robcloud.bloodpressure.report.ReportPdf
 import com.robcloud.bloodpressure.widget.LastReadingWidgetProvider
@@ -26,12 +27,14 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.time.Instant
 import java.time.LocalDate
+import java.time.ZoneId
 import java.time.temporal.ChronoUnit
 
 enum class Period(val label: String) {
     MONTH("Month"),
     QUARTER("Quarter"),
     YEAR("Year"),
+    SINCE_CHECKUP("Since Check Up"),
     ALL("All time")
 }
 
@@ -88,7 +91,7 @@ class HistoryViewModel(application: Application) : AndroidViewModel(application)
         combine(dao.observeAll(), noteDao.observeAll(), period, syncMeta) { readings, notes, period, meta ->
             HistoryUiState(
                 period = period,
-                readings = filterByPeriod(readings, period),
+                readings = filterByPeriod(readings, period, notes),
                 allReadings = readings,
                 allNotes = notes,
                 totalReadingsCount = readings.size,
@@ -245,12 +248,20 @@ class HistoryViewModel(application: Application) : AndroidViewModel(application)
 
 private fun pluralize(count: Int, noun: String): String = "$count $noun${if (count == 1) "" else "s"}"
 
-fun filterByPeriod(readings: List<Reading>, period: Period): List<Reading> {
+/** Most recent Check Up note's date, or null if none has ever been logged. */
+private fun lastCheckUpDate(notes: List<Note>): LocalDate? =
+    notes.filter { it.noteType == NoteType.CHECK_UP }.maxOfOrNull { it.date }
+
+fun filterByPeriod(readings: List<Reading>, period: Period, notes: List<Note> = emptyList()): List<Reading> {
     if (period == Period.ALL) return readings
     val cutoff = when (period) {
         Period.MONTH -> Instant.now().minus(30, ChronoUnit.DAYS)
         Period.QUARTER -> Instant.now().minus(91, ChronoUnit.DAYS)
         Period.YEAR -> Instant.now().minus(365, ChronoUnit.DAYS)
+        // No Check Up logged yet — nothing can be "since" it, so match none rather than everything.
+        Period.SINCE_CHECKUP -> lastCheckUpDate(notes)
+            ?.atStartOfDay(ZoneId.systemDefault())?.toInstant()
+            ?: Instant.MAX
         Period.ALL -> Instant.EPOCH
     }
     return readings.filter { it.takenAt.isAfter(cutoff) }
@@ -262,6 +273,7 @@ fun filterNotesByPeriod(notes: List<Note>, period: Period): List<Note> {
         Period.MONTH -> LocalDate.now().minusDays(30)
         Period.QUARTER -> LocalDate.now().minusDays(91)
         Period.YEAR -> LocalDate.now().minusDays(365)
+        Period.SINCE_CHECKUP -> lastCheckUpDate(notes) ?: LocalDate.MAX
         Period.ALL -> LocalDate.MIN
     }
     return notes.filter { !it.date.isBefore(cutoff) }

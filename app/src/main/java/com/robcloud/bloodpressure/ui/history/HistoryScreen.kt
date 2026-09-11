@@ -143,7 +143,7 @@ fun HistoryScreen(storageHost: StorageHost, viewModel: HistoryViewModel = viewMo
 
                 PeriodStatsRow(state.readings)
 
-                ReadingsChart(state.readings, filterNotesByPeriod(state.allNotes, state.period))
+                ReadingsChart(state.readings)
             }
 
             HorizontalDivider()
