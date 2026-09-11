@@ -36,8 +36,10 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.robcloud.bloodpressure.BloodPressureApp
 import com.robcloud.bloodpressure.BuildConfig
 import com.robcloud.bloodpressure.ui.EqualWidthSegmentedRow
+import com.robcloud.bloodpressure.ui.Formatters
 import com.robcloud.bloodpressure.update.UpdateCheckFrequency
 import com.robcloud.bloodpressure.update.UpdateManager
 import com.robcloud.bloodpressure.update.UpdatePrefsStore
@@ -49,6 +51,9 @@ private const val FEEDBACK_EMAIL = "android.bp@robcloud.qzz.io"
 
 /** Newest first; keep the three most recent versions here (older entries drop off). */
 private val CHANGELOG = listOf(
+    "2.5.9" to listOf(
+        "About tab now shows a Backup section: where your data is synced, when it last synced, and a warning if the folder is only local storage rather than a cloud location."
+    ),
     "2.5.8" to listOf(
         "New \"Send feedback\" button in the About tab, opening an email pre-filled with your app version and device details.",
         "Add Reading now warns you if no backup folder is set, or if the one you picked is only on this device — either way, a lost or wiped phone would take your readings with it."
@@ -57,10 +62,6 @@ private val CHANGELOG = listOf(
         "New \"Since Check Up\" filter on the History and Log tabs, showing everything logged since your most recent Check Up note.",
         "Add Reading: Heart rate and the arm selector now share one row, so the form fits without scrolling on more screens.",
         "History chart no longer marks note dates — a cleaner view of just the readings."
-    ),
-    "2.5.5" to listOf(
-        "Fixed for real: the Updates frequency buttons and the History/Log period buttons are now equal width in portrait, in landscape, and at large font sizes. The last option no longer stretches or wraps onto two lines.",
-        "Show download file size in update states so you know what you're downloading."
     ),
 )
 
@@ -88,6 +89,8 @@ fun AboutScreen(updateViewModel: UpdateViewModel = viewModel()) {
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
         }
+
+        BackupSection()
 
         FeedbackButton()
 
@@ -121,6 +124,46 @@ fun AboutScreen(updateViewModel: UpdateViewModel = viewModel()) {
                     )
                 }
             }
+        }
+    }
+}
+
+/**
+ * Where readings/notes are mirrored to, if anywhere. Reads [com.robcloud.bloodpressure.backup.BackupFolderStore]
+ * directly — About is a plain info screen with no ViewModel of its own, and this tab is torn
+ * down and recomposed fresh on every visit (see `MainActivity`'s tab switcher), so a one-shot
+ * `remember` here always reflects the current folder without needing a lifecycle hook.
+ */
+@Composable
+private fun BackupSection() {
+    val context = LocalContext.current
+    val store = remember { (context.applicationContext as BloodPressureApp).backupFolderStore }
+    val folderName = remember { store.displayName() }
+    val lastSyncedAt = remember { store.getLastSyncedAt() }
+    val isLocalOnly = remember { store.isLocalOnly() }
+    val atRisk = folderName == null || isLocalOnly
+
+    Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)) {
+        Column(
+            modifier = Modifier.fillMaxWidth().padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(6.dp)
+        ) {
+            Text("Backup", style = MaterialTheme.typography.titleMedium)
+            Text(
+                when {
+                    folderName == null ->
+                        "Not backed up — no folder set. Choose one from the History tab."
+                    isLocalOnly ->
+                        "Backed up to \"$folderName\" — but that's local device storage, not a " +
+                            "cloud folder, so it won't survive a lost or wiped phone."
+                    lastSyncedAt != null ->
+                        "Backed up to \"$folderName\" · last synced ${Formatters.dateTime(lastSyncedAt)}"
+                    else ->
+                        "Backup folder: \"$folderName\" · not yet synced"
+                },
+                style = MaterialTheme.typography.bodyMedium,
+                color = if (atRisk) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant
+            )
         }
     }
 }
