@@ -1,5 +1,11 @@
 package com.robcloud.bloodpressure.ui.about
 
+import android.content.ActivityNotFoundException
+import android.content.Context
+import android.content.Intent
+import android.net.Uri
+import android.os.Build
+import android.widget.Toast
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -7,11 +13,14 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Email
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.Icon
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
@@ -36,16 +45,18 @@ import com.robcloud.bloodpressure.update.UpdateScheduler
 import com.robcloud.bloodpressure.update.UpdateUiState
 import com.robcloud.bloodpressure.update.UpdateViewModel
 
+private const val FEEDBACK_EMAIL = "android.bp@robcloud.qzz.io"
+
 /** Newest first; keep the three most recent versions here (older entries drop off). */
 private val CHANGELOG = listOf(
+    "2.5.8" to listOf(
+        "New \"Send feedback\" button in the About tab, opening an email pre-filled with your app version and device details.",
+        "Add Reading now warns you if no backup folder is set, or if the one you picked is only on this device — either way, a lost or wiped phone would take your readings with it."
+    ),
     "2.5.7" to listOf(
         "New \"Since Check Up\" filter on the History and Log tabs, showing everything logged since your most recent Check Up note.",
         "Add Reading: Heart rate and the arm selector now share one row, so the form fits without scrolling on more screens.",
         "History chart no longer marks note dates — a cleaner view of just the readings."
-    ),
-    "2.5.6" to listOf(
-        "The equal-width button fix from 2.5.5 is now locked in by automated screenshot tests, so that sizing bug cannot quietly come back in a future release.",
-        "No other changes — this is a maintenance release."
     ),
     "2.5.5" to listOf(
         "Fixed for real: the Updates frequency buttons and the History/Log period buttons are now equal width in portrait, in landscape, and at large font sizes. The last option no longer stretches or wraps onto two lines.",
@@ -78,6 +89,8 @@ fun AboutScreen(updateViewModel: UpdateViewModel = viewModel()) {
             )
         }
 
+        FeedbackButton()
+
         UpdateSection(updateViewModel)
 
         Text(
@@ -109,6 +122,39 @@ fun AboutScreen(updateViewModel: UpdateViewModel = viewModel()) {
                 }
             }
         }
+    }
+}
+
+@Composable
+private fun FeedbackButton() {
+    val context = LocalContext.current
+    OutlinedButton(onClick = { sendFeedbackEmail(context) }, modifier = Modifier.fillMaxWidth()) {
+        Icon(Icons.Filled.Email, contentDescription = null, modifier = Modifier.padding(end = 8.dp))
+        Text("Send feedback")
+    }
+}
+
+/**
+ * Opens an email draft addressed to [FEEDBACK_EMAIL], with the app version and device details
+ * pre-filled below a blank line so the user can just start typing at the top.
+ */
+private fun sendFeedbackEmail(context: Context) {
+    val body = "\n\n" +
+        "—\n" +
+        "Please leave the details below — they help track down the issue:\n" +
+        "Version: ${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE})\n" +
+        "Device: ${Build.MANUFACTURER} ${Build.MODEL}\n" +
+        "Android: ${Build.VERSION.RELEASE} (SDK ${Build.VERSION.SDK_INT})"
+    val intent = Intent(Intent.ACTION_SENDTO).apply {
+        data = Uri.parse("mailto:")
+        putExtra(Intent.EXTRA_EMAIL, arrayOf(FEEDBACK_EMAIL))
+        putExtra(Intent.EXTRA_SUBJECT, "BP Tracker feedback (v${BuildConfig.VERSION_NAME})")
+        putExtra(Intent.EXTRA_TEXT, body)
+    }
+    try {
+        context.startActivity(intent)
+    } catch (e: ActivityNotFoundException) {
+        Toast.makeText(context, "No email app found", Toast.LENGTH_SHORT).show()
     }
 }
 

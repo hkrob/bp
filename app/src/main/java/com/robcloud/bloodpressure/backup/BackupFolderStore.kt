@@ -22,6 +22,16 @@ class BackupFolderStore(private val context: Context) {
 
     fun get(): Uri? = prefs.getString(KEY_FOLDER_URI, null)?.let(Uri::parse)
 
+    fun isConfigured(): Boolean = get() != null
+
+    /**
+     * True only when a folder IS set but resolves to on-device storage (SAF's "external
+     * storage" provider) — doesn't protect against device loss, app uninstall, or factory
+     * reset the way a cloud provider (Drive, Dropbox, etc.) does. Any other authority is
+     * presumed cloud-backed; no cloud provider authority is hardcoded here.
+     */
+    fun isLocalOnly(): Boolean = get()?.authority == "com.android.externalstorage.documents"
+
     fun set(uri: Uri) {
         val previous = get()
         if (previous != null && previous != uri) {

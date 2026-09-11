@@ -32,7 +32,9 @@ data class CaptureUiState(
     val justSaved: Boolean = false,
     val medicationSaved: Boolean = false,
     /** "sys/dia" of a just-saved reading in the hypertensive-crisis range, for the advisory dialog. */
-    val crisisBp: String? = null
+    val crisisBp: String? = null,
+    val backupNotConfigured: Boolean = false,
+    val backupLocalOnly: Boolean = false
 )
 
 class CaptureViewModel(application: Application) : AndroidViewModel(application) {
@@ -42,6 +44,10 @@ class CaptureViewModel(application: Application) : AndroidViewModel(application)
 
     private val _uiState = MutableStateFlow(CaptureUiState())
     val uiState: StateFlow<CaptureUiState> = _uiState.asStateFlow()
+
+    init {
+        refreshBackupStatus()
+    }
 
     val lastReading: StateFlow<Reading?> = dao.observeLatest()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
@@ -57,6 +63,13 @@ class CaptureViewModel(application: Application) : AndroidViewModel(application)
     fun updateArm(arm: Arm) = update { it.copy(arm = arm) }
     fun updateTakenAt(instant: Instant) = update { it.copy(takenAt = instant) }
     fun setTakenAtNow() = update { it.copy(takenAt = Instant.now()) }
+
+    fun refreshBackupStatus() = update {
+        it.copy(
+            backupNotConfigured = !app.backupFolderStore.isConfigured(),
+            backupLocalOnly = app.backupFolderStore.isLocalOnly()
+        )
+    }
 
     fun save() {
         val state = _uiState.value
@@ -85,7 +98,9 @@ class CaptureViewModel(application: Application) : AndroidViewModel(application)
             val isCrisis = BpCategory.of(systolic, diastolic!!) == BpCategory.CRISIS
             _uiState.value = CaptureUiState(
                 justSaved = true,
-                crisisBp = if (isCrisis) "$systolic/$diastolic" else null
+                crisisBp = if (isCrisis) "$systolic/$diastolic" else null,
+                backupNotConfigured = state.backupNotConfigured,
+                backupLocalOnly = state.backupLocalOnly
             )
         }
     }
