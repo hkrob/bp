@@ -47,6 +47,17 @@ android {
     }
 
     buildTypes {
+        debug {
+            // Give debug builds their own applicationId so they install alongside the released
+            // app rather than replacing it. Without this, Android treats a debug build as an
+            // update to the installed release, rejects it on the signature mismatch, and the
+            // only way through is an uninstall — which destroys the local reading database.
+            // The FileProvider authority is derived from ${applicationId} in the manifest and
+            // from context.packageName at both call sites, so it follows the suffix.
+            applicationIdSuffix = ".debug"
+            versionNameSuffix = "-debug"
+        }
+
         release {
             isMinifyEnabled = false
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
