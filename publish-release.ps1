@@ -30,8 +30,16 @@ $ErrorActionPreference = 'Stop'
 $Root = $PSScriptRoot
 # Public fingerprint of release.keystore — published in every APK, so safe to keep here.
 $ExpectedSigner = 'e860205cdfbfca2bd8ad7d9507f8ac4cf5f1470faac0c0744b9cd037e376fb9d'
-# The system Java is a JRE and cannot compile; use Android Studio's bundled JDK.
-$JavaHome = 'C:\Program Files\Android\Android Studio\jbr'
+# The system Java is often a JRE and cannot compile, so pick a real JDK explicitly:
+# JAVA_HOME if it points at one, else Android Studio's bundled JBR, else the newest Temurin.
+# Paparazzi needs 21+; the version check below enforces that wherever it came from.
+$JavaHome = @(
+    $env:JAVA_HOME
+    'C:\Program Files\Android\Android Studio\jbr'
+    (Get-ChildItem 'C:\Program Files\Eclipse Adoptium' -Directory -ErrorAction SilentlyContinue |
+        Sort-Object Name -Descending | Select-Object -First 1 -ExpandProperty FullName)
+) | Where-Object { $_ -and (Test-Path (Join-Path $_ 'bin\java.exe')) } | Select-Object -First 1
+if (-not $JavaHome) { throw 'No JDK found. Install a JDK 21+ (winget install EclipseAdoptium.Temurin.21.JDK) or set JAVA_HOME.' }
 
 function Step([string]$Message) { Write-Host "==> $Message" -ForegroundColor Cyan }
 function Note([string]$Message) { Write-Host "    $Message" -ForegroundColor DarkGray }
@@ -119,8 +127,12 @@ Note "$ApkName ($([math]::Round((Get-Item $ApkPath).Length / 1MB, 1)) MB)"
 
 # --- signature guard ---------------------------------------------------------------
 Step 'Verifying the APK is signed with the release key'
-$apksigner = Get-ChildItem 'C:\Users\robadmin\AppData\Local\Android\Sdk\build-tools' -Filter 'apksigner.bat' -Recurse -ErrorAction SilentlyContinue |
-    Sort-Object { [version]$_.Directory.Name } | Select-Object -Last 1
+$sdkRoot = @($env:ANDROID_HOME, $env:ANDROID_SDK_ROOT, "$env:LOCALAPPDATA\Android\Sdk") |
+    Where-Object { $_ -and (Test-Path $_) } | Select-Object -First 1
+$apksigner = if ($sdkRoot) {
+    Get-ChildItem (Join-Path $sdkRoot 'build-tools') -Filter 'apksigner.bat' -Recurse -ErrorAction SilentlyContinue |
+        Sort-Object { [version]$_.Directory.Name } | Select-Object -Last 1
+}
 if (-not $apksigner) {
     Note 'apksigner not found — skipping signature check'
 } else {
