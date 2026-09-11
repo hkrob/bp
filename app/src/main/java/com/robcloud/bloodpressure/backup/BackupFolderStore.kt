@@ -11,6 +11,7 @@ private const val PREFS_NAME = "backup_prefs"
 private const val KEY_FOLDER_URI = "backup_folder_uri"
 private const val KEY_FOLDER_NAME = "backup_folder_name"
 private const val KEY_LAST_SYNCED_AT = "last_synced_at"
+private const val LOCAL_STORAGE_AUTHORITY = "com.android.externalstorage.documents"
 
 /**
  * Remembers the folder the user picked via the system folder picker (Storage Access
@@ -30,7 +31,20 @@ class BackupFolderStore(private val context: Context) {
      * reset the way a cloud provider (Drive, Dropbox, etc.) does. Any other authority is
      * presumed cloud-backed; no cloud provider authority is hardcoded here.
      */
-    fun isLocalOnly(): Boolean = get()?.authority == "com.android.externalstorage.documents"
+    fun isLocalOnly(): Boolean = get()?.authority == LOCAL_STORAGE_AUTHORITY
+
+    /**
+     * Friendly name of the storage provider behind the configured folder (e.g. "Google Drive"),
+     * or null when it's local storage or a provider not in the known list below — folder name
+     * and sync time are still shown either way, this is purely an extra hint of *where*.
+     */
+    fun providerLabel(): String? = when (get()?.authority) {
+        "com.google.android.apps.docs.storage", "com.google.android.apps.docs.storage.legacy" -> "Google Drive"
+        "com.dropbox.product.android.dbapp.documentprovider" -> "Dropbox"
+        "com.microsoft.skydrive.content.StorageAccessProvider" -> "OneDrive"
+        "com.box.android.documents" -> "Box"
+        else -> null
+    }
 
     fun set(uri: Uri) {
         val previous = get()
