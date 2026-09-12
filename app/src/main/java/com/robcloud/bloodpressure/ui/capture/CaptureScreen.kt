@@ -363,12 +363,17 @@ private fun LastReadingCard(reading: Reading, previous: Reading?) {
                     color = MaterialTheme.colorScheme.onPrimaryContainer
                 )
                 Text(
-                    "mmHg  ·  ${reading.heartRateBpm} bpm  ·  ${Formatters.dateTime(reading.takenAt)}",
+                    "mmHg  ·  ${reading.heartRateBpm} bpm",
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onPrimaryContainer
                 )
             }
             previous?.let { TrendRow(reading, it) }
+            Text(
+                Formatters.dateTime(reading.takenAt),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.7f)
+            )
         }
     }
 }
