@@ -20,7 +20,9 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.SnackbarDuration
 import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarResult
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -34,16 +36,20 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
-import com.robcloud.bloodpressure.data.BpCategory
+import com.robcloud.bloodpressure.data.Averages
+import com.robcloud.bloodpressure.data.averageOf
+import com.robcloud.bloodpressure.data.groupIntoSittings
+import com.robcloud.bloodpressure.data.timeOfDayAverages
 import com.robcloud.bloodpressure.data.Reading
 import com.robcloud.bloodpressure.ui.EqualWidthSegmentedRow
 import com.robcloud.bloodpressure.ui.Formatters
 import com.robcloud.bloodpressure.ui.theme.StatusElevated
 import kotlinx.coroutines.flow.filterNotNull
-import kotlin.math.roundToInt
+import java.time.ZoneId
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -70,9 +76,9 @@ fun HistoryScreen(viewModel: HistoryViewModel = viewModel()) {
     // Unit-keyed effect — an effect keyed on the message would be cancelled (snackbar and
     // all) by the very recomposition that consuming it triggers.
     LaunchedEffect(Unit) {
-        viewModel.message.filterNotNull().collect { text ->
+        viewModel.message.filterNotNull().collect { msg ->
             viewModel.consumeMessage()
-            snackbarHostState.showSnackbar(text)
+            snackbarHostState.showUserMessage(msg, viewModel::undo)
         }
     }
 
@@ -187,44 +193,104 @@ fun HistoryScreen(viewModel: HistoryViewModel = viewModel()) {
 }
 
 /**
+ * Shows [msg], with an Undo action when it has one. The duration is explicit: with an action
+ * label Material 3 defaults to Indefinite, which would leave the snackbar up for good and hold
+ * back every later message queued behind it.
+ */
+internal suspend fun SnackbarHostState.showUserMessage(msg: UserMessage, onUndo: (Undo) -> Unit) {
+    val undo = msg.undo
+    if (undo == null) {
+        showSnackbar(msg.text)
+        return
+    }
+    val result = showSnackbar(msg.text, actionLabel = "Undo", duration = SnackbarDuration.Long)
+    if (result == SnackbarResult.ActionPerformed) onUndo(undo)
+}
+
+/**
  * Period-average summary for the readings currently shown on the chart, with the average's
  * AHA category so the user gets an at-a-glance verdict, not just numbers.
  */
 @Composable
 private fun PeriodStatsRow(readings: List<Reading>) {
-    if (readings.isEmpty()) return
-    val avgSys = readings.map { it.systolicMmHg }.average().roundToInt()
-    val avgDia = readings.map { it.diastolicMmHg }.average().roundToInt()
-    val avgHr = readings.map { it.heartRateBpm }.average().roundToInt()
-    val category = BpCategory.of(avgSys, avgDia)
+    val avg = remember(readings) { averageOf(readings) } ?: return
+    val sittingCount = remember(readings) { groupIntoSittings(readings).size }
+    val split = remember(readings) { timeOfDayAverages(readings, ZoneId.systemDefault()) }
+    val irregularCount = remember(readings) { readings.count { it.irregularHeartbeat } }
 
-    Row(
-        modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.SpaceBetween,
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        Column {
-            Text("Average", style = MaterialTheme.typography.labelMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant)
-            Row(verticalAlignment = Alignment.Bottom) {
-                Text(
-                    "$avgSys/$avgDia",
-                    style = MaterialTheme.typography.titleMedium,
-                    color = categoryColor(category)
-                )
-                Text(
-                    "  mmHg · $avgHr bpm",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Column {
+                Text("Average", style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Row(verticalAlignment = Alignment.Bottom) {
+                    Text(
+                        "${avg.systolic}/${avg.diastolic}",
+                        style = MaterialTheme.typography.titleMedium,
+                        color = categoryColor(avg.category)
+                    )
+                    Text(
+                        "  mmHg · ${avg.heartRate} bpm",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
+            Text(
+                avg.category.label,
+                style = MaterialTheme.typography.labelLarge,
+                color = categoryColor(avg.category)
+            )
+        }
+
+        // Only worth a line when the two differ: with one reading per sitting it says nothing new.
+        if (sittingCount < readings.size) {
+            StatsNote("${readings.size} readings in $sittingCount sittings (readings up to 10 minutes apart count as one)")
+        }
+
+        // Home-monitoring advice compares morning and evening; a window with no readings is left out.
+        if (split.morning != null && split.evening != null) {
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+                TimeOfDayAverage("Morning (before 12:00)", split.morning, Modifier.weight(1f))
+                TimeOfDayAverage("Afternoon & evening", split.evening, Modifier.weight(1f))
             }
         }
-        Text(
-            category.label,
-            style = MaterialTheme.typography.labelLarge,
-            color = categoryColor(category)
-        )
+
+        if (irregularCount > 0) {
+            StatsNote(
+                "Irregular heartbeat flagged on $irregularCount of ${readings.size} readings ($IRREGULAR_MARK in the list)",
+                color = MaterialTheme.colorScheme.error
+            )
+        }
     }
+}
+
+@Composable
+private fun TimeOfDayAverage(label: String, avg: Averages, modifier: Modifier = Modifier) {
+    Column(modifier) {
+        Text(label, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Row(verticalAlignment = Alignment.Bottom) {
+            Text(
+                "${avg.systolic}/${avg.diastolic}",
+                style = MaterialTheme.typography.titleSmall,
+                color = categoryColor(avg.category)
+            )
+            Text(
+                "  ${avg.heartRate} bpm · ${avg.count}",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+    }
+}
+
+@Composable
+private fun StatsNote(text: String, color: Color = MaterialTheme.colorScheme.onSurfaceVariant) {
+    Text(text, style = MaterialTheme.typography.bodySmall, color = color)
 }
 
 @Composable

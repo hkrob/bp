@@ -111,7 +111,8 @@ class SegmentedControlSnapshotTest {
     @Test
     fun longLabelsEllipsize() = snapshot("labels-long-ellipsize") {
         EqualWidthSegmentedRow(
-            options = BpCategory.entries.toList(),
+            // The five raised-range categories this baseline was recorded with.
+            options = BpCategory.entries.filter { it != BpCategory.LOW },
             selected = BpCategory.STAGE_2,
             label = { it.label },
             onSelect = {}

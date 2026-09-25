@@ -16,6 +16,10 @@ class UpdateCheckWorker(context: Context, params: WorkerParameters) : CoroutineW
                 store.clearLatestRelease()
             }
             Result.success()
+        } catch (e: UpdateCheckException) {
+            // GitHub answered with an error (usually its rate limit): retrying soon only spends
+            // more of the shared limit, so wait for the next scheduled check.
+            Result.success()
         } catch (e: Exception) {
             Result.retry()
         }

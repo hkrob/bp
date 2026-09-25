@@ -20,7 +20,10 @@ import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.Medication
 import androidx.compose.material.icons.filled.Schedule
 import androidx.compose.material.icons.automirrored.filled.TrendingFlat
+import androidx.compose.foundation.selection.toggleable
 import androidx.compose.material3.Card
+import androidx.compose.material3.Checkbox
+import androidx.compose.ui.semantics.Role
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
@@ -229,6 +232,11 @@ fun CaptureScreen(
                 )
             }
 
+            IrregularHeartbeatCheckbox(
+                checked = state.irregularHeartbeat,
+                onCheckedChange = viewModel::updateIrregularHeartbeat
+            )
+
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 OutlinedButton(
                     onClick = { showDatePicker(context, state.takenAt, viewModel::updateTakenAt) },
@@ -301,6 +309,24 @@ fun CaptureScreen(
         SnackbarHost(hostState = snackbarHostState) { data ->
             Snackbar(modifier = Modifier.padding(16.dp)) { Text(data.visuals.message) }
         }
+    }
+}
+
+/** Shared with the edit dialog. The whole row toggles, not just the box. */
+@Composable
+fun IrregularHeartbeatCheckbox(checked: Boolean, onCheckedChange: (Boolean) -> Unit, modifier: Modifier = Modifier) {
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        modifier = modifier
+            .fillMaxWidth()
+            .toggleable(value = checked, role = Role.Checkbox, onValueChange = onCheckedChange)
+    ) {
+        Checkbox(checked = checked, onCheckedChange = null)
+        Text(
+            "Monitor showed an irregular heartbeat",
+            style = MaterialTheme.typography.bodyMedium,
+            modifier = Modifier.padding(start = 8.dp)
+        )
     }
 }
 
@@ -382,7 +408,7 @@ private fun LastReadingCard(reading: Reading, previous: Reading?) {
                     color = MaterialTheme.colorScheme.onPrimaryContainer
                 )
                 Text(
-                    "mmHg  ·  ${reading.heartRateBpm} bpm",
+                    "mmHg  ·  ${reading.heartRateBpm} bpm" + if (reading.irregularHeartbeat) " (irregular)" else "",
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onPrimaryContainer
                 )

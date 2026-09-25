@@ -3,8 +3,12 @@ package com.robcloud.bloodpressure.data
 /**
  * American Heart Association blood-pressure categories. A reading falls into the highest
  * category either number qualifies for (e.g. 125/95 is Stage 2 because of the diastolic).
+ *
+ * [LOW] is not an AHA category but the common hypotension threshold (under 90 systolic or under
+ * 60 diastolic). It only applies when neither number is raised, so 85/95 is still Stage 2.
  */
 enum class BpCategory(val label: String) {
+    LOW("Low"),
     NORMAL("Normal"),
     ELEVATED("Elevated"),
     STAGE_1("Stage 1 hypertension"),
@@ -17,6 +21,7 @@ enum class BpCategory(val label: String) {
             systolicMmHg >= 140 || diastolicMmHg >= 90 -> STAGE_2
             systolicMmHg >= 130 || diastolicMmHg >= 80 -> STAGE_1
             systolicMmHg >= 120 -> ELEVATED
+            systolicMmHg < 90 || diastolicMmHg < 60 -> LOW
             else -> NORMAL
         }
     }

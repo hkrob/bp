@@ -76,9 +76,9 @@ fun LogScreen(viewModel: HistoryViewModel = viewModel()) {
     // leaving them to pop up later on the History tab. Same pattern as HistoryScreen: a
     // Unit-keyed collector, so consuming the message doesn't cancel its own snackbar.
     LaunchedEffect(Unit) {
-        viewModel.message.filterNotNull().collect { text ->
+        viewModel.message.filterNotNull().collect { msg ->
             viewModel.consumeMessage()
-            snackbarHostState.showSnackbar(text)
+            snackbarHostState.showUserMessage(msg, viewModel::undo)
         }
     }
     var editingReading by remember { mutableStateOf<Reading?>(null) }
@@ -266,6 +266,10 @@ private fun LogRow(
         Text("$dateTime ", style = mono)
         Text(bp, style = mono.copy(fontWeight = FontWeight.Medium), color = readingStatusColor(reading))
         Text(" $hr  $arm", style = mono)
+        // Only on flagged rows, after the last column, so the fixed-width columns keep lining up.
+        if (reading.irregularHeartbeat) {
+            Text(" $IRREGULAR_MARK", style = mono, color = MaterialTheme.colorScheme.error)
+        }
     }
 }
 

@@ -29,24 +29,26 @@ data class ParsedCsv(val readings: List<Reading>, val notes: List<Note>, val ski
 object Csv {
     private val LEGACY_HEADER =
         listOf("id", "taken_at", "systolic_mmhg", "diastolic_mmhg", "heart_rate_bpm", "arm")
-    private val HEADER = listOf(
+    /** Written by 2.4–2.6, before the irregular-heartbeat column. Still read, never written. */
+    private val HEADER_V2 = listOf(
         "record_type", "id", "date", "systolic_mmhg", "diastolic_mmhg", "heart_rate_bpm",
         "arm", "note_type", "note_details"
     )
+    private val HEADER = HEADER_V2 + "irregular_heartbeat"
 
     fun write(readings: List<Reading>, notes: List<Note>): String {
         val readingRows = readings.sortedByDescending { it.takenAt }.map { r ->
             listOf(
                 "READING", r.id, r.takenAt.toString(),
                 r.systolicMmHg.toString(), r.diastolicMmHg.toString(), r.heartRateBpm.toString(),
-                r.arm.name, "", ""
+                r.arm.name, "", "", if (r.irregularHeartbeat) "true" else "false"
             )
         }
         val noteRows = notes.sortedByDescending { it.date.atTime(it.time) }.map { n ->
             listOf(
                 "NOTE", n.id, n.date.atTime(n.time).toString(),
                 "", "", "", "",
-                n.noteType.name, guardFormulaInjection(n.details)
+                n.noteType.name, guardFormulaInjection(n.details), ""
             )
         }
         val rows = readingRows + noteRows
@@ -61,7 +63,7 @@ object Csv {
     fun isBackupFile(csv: String): Boolean {
         val header = parseRows(csv.removePrefix(BOM)).firstOrNull { row -> row.any { it.isNotBlank() } }
             ?: return true
-        return header == HEADER || header == LEGACY_HEADER
+        return header == HEADER || header == HEADER_V2 || header == LEGACY_HEADER
     }
 
     fun parse(csv: String): ParsedCsv {
@@ -78,11 +80,15 @@ object Csv {
             return ParsedCsv(readings, emptyList(), skippedRows = dataRows.size - readings.size)
         }
 
+        // The row width follows the file's own header, or every row of a v2 backup would be
+        // rejected as the wrong width. An unrecognised header is read as v2; its rows then fail
+        // to parse and are counted as skipped.
+        val width = if (header == HEADER) HEADER.size else HEADER_V2.size
         val readings = mutableListOf<Reading>()
         val notes = mutableListOf<Note>()
         var skipped = 0
         for (parts in dataRows) {
-            if (parts.size != HEADER.size) {
+            if (parts.size != width) {
                 skipped++
                 continue
             }
@@ -95,7 +101,8 @@ object Csv {
                             systolicMmHg = parts[3].toInt(),
                             diastolicMmHg = parts[4].toInt(),
                             heartRateBpm = parts[5].toInt(),
-                            arm = Arm.valueOf(parts[6])
+                            arm = Arm.valueOf(parts[6]),
+                            irregularHeartbeat = parseFlag(parts.getOrElse(9) { "" })
                         )
                     )
                     "NOTE" -> {
@@ -131,6 +138,13 @@ object Csv {
             val dt = LocalDateTime.parse(value)
             dt.toLocalDate() to dt.toLocalTime()
         }.getOrElse { LocalDate.parse(value) to LocalTime.of(0, 1) }
+
+    /** Blank (a v2 file, or a note row) means not flagged; anything unexpected fails the row. */
+    private fun parseFlag(value: String): Boolean = when (value) {
+        "true" -> true
+        "false", "" -> false
+        else -> throw IllegalArgumentException("Bad irregular_heartbeat value: $value")
+    }
 
     private fun parseLegacyReading(parts: List<String>): Reading? {
         if (parts.size != LEGACY_HEADER.size) return null

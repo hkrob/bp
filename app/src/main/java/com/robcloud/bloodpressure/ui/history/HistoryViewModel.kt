@@ -77,8 +77,12 @@ class HistoryViewModel(application: Application) : AndroidViewModel(application)
     // Follows the stored status, so background syncs (after-save, daily) show up here too.
     private val backupStatus = store.changes().map { store.status() }.flowOn(Dispatchers.IO)
 
-    /** One-shot user-facing messages (import/export results), consumed by a snackbar. */
-    val message = MutableStateFlow<String?>(null)
+    /** One-shot user-facing messages (import/export results, deletes), consumed by a snackbar. */
+    val message = MutableStateFlow<UserMessage?>(null)
+
+    private fun say(text: String) {
+        message.value = UserMessage(text)
+    }
 
     /** Set to a shareable report PDF Uri when one is ready; the screen launches the share sheet. */
     val pendingReportShare = MutableStateFlow<Uri?>(null)
@@ -100,7 +104,7 @@ class HistoryViewModel(application: Application) : AndroidViewModel(application)
         viewModelScope.launch(Dispatchers.IO) {
             // Refreshes the cached folder name from the provider (the status flow picks it up).
             store.displayName()
-            store.takePendingNotice()?.let { message.value = it }
+            store.takePendingNotice()?.let(::say)
         }
     }
 
@@ -116,7 +120,7 @@ class HistoryViewModel(application: Application) : AndroidViewModel(application)
     fun generateReport() {
         val snapshot = uiState.value
         if (snapshot.readings.isEmpty()) {
-            message.value = "No readings in this period to report"
+            say("No readings in this period to report")
             return
         }
         viewModelScope.launch {
@@ -133,7 +137,7 @@ class HistoryViewModel(application: Application) : AndroidViewModel(application)
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
-                message.value = "Report failed: ${e.message}"
+                say("Report failed: ${e.message}")
             }
         }
     }
@@ -155,7 +159,7 @@ class HistoryViewModel(application: Application) : AndroidViewModel(application)
             dao.deleteWithTombstone(reading.id)
             BackupSyncWorker.enqueue(app)
             LastReadingWidgetProvider.refresh(app)
-            message.value = "Reading deleted"
+            message.value = UserMessage("Reading deleted", undo = Undo.RestoreReading(reading))
         }
     }
 
@@ -170,7 +174,21 @@ class HistoryViewModel(application: Application) : AndroidViewModel(application)
         viewModelScope.launch {
             noteDao.deleteWithTombstone(note.id)
             BackupSyncWorker.enqueue(app)
-            message.value = "Note deleted"
+            message.value = UserMessage("Note deleted", undo = Undo.RestoreNote(note))
+        }
+    }
+
+    /** Puts a just-deleted reading or note back, exactly as it was, and drops its tombstone. */
+    fun undo(undo: Undo) {
+        viewModelScope.launch {
+            when (undo) {
+                is Undo.RestoreReading -> {
+                    dao.restore(undo.reading)
+                    LastReadingWidgetProvider.refresh(app)
+                }
+                is Undo.RestoreNote -> noteDao.restore(undo.note)
+            }
+            BackupSyncWorker.enqueue(app)
         }
     }
 
@@ -181,7 +199,7 @@ class HistoryViewModel(application: Application) : AndroidViewModel(application)
                 val readings = dao.getAll()
                 val notes = noteDao.getAll()
                 if (readings.isEmpty() && notes.isEmpty()) {
-                    message.value = "Nothing to export yet"
+                    say("Nothing to export yet")
                     return@launch
                 }
                 val replaced = withContext(Dispatchers.IO) {
@@ -194,11 +212,11 @@ class HistoryViewModel(application: Application) : AndroidViewModel(application)
                     existing != null
                 }
                 val what = "${pluralize(readings.size, "reading")}, ${pluralize(notes.size, "note")}"
-                message.value = if (replaced) "Exported $what, replacing the old $fileName" else "Exported $what"
+                say(if (replaced) "Exported $what, replacing the old $fileName" else "Exported $what")
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
-                message.value = "Export failed: ${e.message}"
+                say("Export failed: ${e.message}")
             }
         }
     }
@@ -217,7 +235,7 @@ class HistoryViewModel(application: Application) : AndroidViewModel(application)
                     Csv.parse(text)
                 }
                 if (parsed.readings.isEmpty() && parsed.notes.isEmpty()) {
-                    message.value = "No readings or notes found in that file"
+                    say("No readings or notes found in that file")
                     return@launch
                 }
                 val (newReadings, newNotes) = app.database.withTransaction {
@@ -233,15 +251,15 @@ class HistoryViewModel(application: Application) : AndroidViewModel(application)
                     BackupSyncWorker.enqueue(app)
                     LastReadingWidgetProvider.refresh(app)
                 }
-                message.value = importMessage(
+                say(importMessage(
                     newReadings, newNotes,
                     alreadyHere = parsed.readings.size + parsed.notes.size - newReadings - newNotes,
                     unreadable = parsed.skippedRows
-                )
+                ))
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
-                message.value = "Import failed: ${e.message}"
+                say("Import failed: ${e.message}")
             }
         }
     }
@@ -257,7 +275,7 @@ class HistoryViewModel(application: Application) : AndroidViewModel(application)
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
-                message.value = "Couldn't use that folder: ${e.message}"
+                say("Couldn't use that folder: ${e.message}")
                 return@launch
             }
             syncNow()
@@ -270,7 +288,7 @@ class HistoryViewModel(application: Application) : AndroidViewModel(application)
         viewModelScope.launch {
             try {
                 val result = app.backupSyncManager.sync()
-                result.preservedCopy?.let { message.value = unreadableRowsNotice(it) }
+                result.preservedCopy?.let { say(unreadableRowsNotice(it)) }
             } catch (e: NoBackupFolderSelectedException) {
                 // Nothing to sync to yet.
             } catch (e: CancellationException) {
@@ -284,6 +302,14 @@ class HistoryViewModel(application: Application) : AndroidViewModel(application)
         }
     }
 }
+
+sealed interface Undo {
+    data class RestoreReading(val reading: Reading) : Undo
+    data class RestoreNote(val note: Note) : Undo
+}
+
+/** A snackbar message; with [undo], the snackbar offers an Undo action. */
+data class UserMessage(val text: String, val undo: Undo? = null)
 
 private fun pluralize(count: Int, noun: String): String = "$count $noun${if (count == 1) "" else "s"}"
 

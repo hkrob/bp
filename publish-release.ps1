@@ -102,6 +102,26 @@ $Commit = (& git -C $Root rev-parse HEAD).Trim()
 $existing = & $gh release view $Tag --repo hkrob/bp 2>&1
 if ($LASTEXITCODE -eq 0) { throw "Release $Tag already exists — bump the version first." }
 
+# Android refuses an update whose versionCode isn't higher than the installed one, so a missed
+# bump would publish an APK that can't be installed as an update.
+$prevTag = (& $gh release view --repo hkrob/bp --json tagName --jq .tagName 2>$null)
+if ($LASTEXITCODE -eq 0 -and $prevTag) {
+    $prevTag = "$prevTag".Trim()
+    & git -C $Root fetch --quiet --tags origin
+    if ($LASTEXITCODE -ne 0) { throw 'git fetch --tags failed — cannot check versionCode against the latest release.' }
+    $prevGradle = (& git -C $Root show "refs/tags/${prevTag}:app/build.gradle.kts" 2>$null) -join "`n"
+    if ($LASTEXITCODE -ne 0 -or $prevGradle -notmatch 'versionCode\s*=\s*(\d+)') {
+        throw "Could not read versionCode from the latest release ($prevTag)."
+    }
+    $prevCode = [int]$Matches[1]
+    if ([int]$VersionCode -le $prevCode) {
+        throw "versionCode $VersionCode is not higher than $prevTag's ($prevCode) — bump it, or Android won't install this as an update."
+    }
+    Note "versionCode $VersionCode > $prevCode ($prevTag)"
+} else {
+    Note 'No earlier release found — nothing to compare versionCode against'
+}
+
 # --- build -------------------------------------------------------------------------
 $env:JAVA_HOME = $JavaHome
 

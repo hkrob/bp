@@ -32,6 +32,7 @@ import androidx.compose.ui.window.Dialog
 import com.robcloud.bloodpressure.data.Arm
 import com.robcloud.bloodpressure.data.Reading
 import com.robcloud.bloodpressure.ui.Formatters
+import com.robcloud.bloodpressure.ui.capture.IrregularHeartbeatCheckbox
 import com.robcloud.bloodpressure.ui.showDatePicker
 import com.robcloud.bloodpressure.ui.showTimePicker
 import com.robcloud.bloodpressure.ui.validateReading
@@ -50,6 +51,7 @@ fun EditReadingDialog(
     var diastolic by remember { mutableStateOf(reading.diastolicMmHg.toString()) }
     var heartRate by remember { mutableStateOf(reading.heartRateBpm.toString()) }
     var arm by remember { mutableStateOf(reading.arm) }
+    var irregularHeartbeat by remember { mutableStateOf(reading.irregularHeartbeat) }
     var takenAt by remember { mutableStateOf(reading.takenAt) }
     var errorMessage by remember { mutableStateOf<String?>(null) }
     var confirmDelete by remember { mutableStateOf(false) }
@@ -124,6 +126,11 @@ fun EditReadingDialog(
                     }
                 }
 
+                IrregularHeartbeatCheckbox(
+                    checked = irregularHeartbeat,
+                    onCheckedChange = { irregularHeartbeat = it }
+                )
+
                 Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                     OutlinedButton(
                         onClick = { showDatePicker(context, takenAt) { takenAt = it } },
@@ -166,7 +173,8 @@ fun EditReadingDialog(
                                         diastolicMmHg = dia!!,
                                         heartRateBpm = hr!!,
                                         arm = arm,
-                                        takenAt = takenAt
+                                        takenAt = takenAt,
+                                        irregularHeartbeat = irregularHeartbeat
                                     )
                                 )
                             }

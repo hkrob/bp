@@ -12,6 +12,8 @@ import com.robcloud.bloodpressure.data.Note
 import com.robcloud.bloodpressure.data.NoteType
 import com.robcloud.bloodpressure.data.Reading
 import com.robcloud.bloodpressure.data.bpCategory
+import com.robcloud.bloodpressure.data.groupIntoSittings
+import com.robcloud.bloodpressure.data.timeOfDayAverages
 import java.io.File
 import java.time.Instant
 import java.time.LocalDate
@@ -56,6 +58,7 @@ object ReportPdf {
     private const val COLOR_NOTE = 0xFF7E57C2.toInt()
 
     private fun categoryColor(category: BpCategory): Int = when (category) {
+        BpCategory.LOW -> 0xFF1F6FD1.toInt()
         BpCategory.NORMAL -> 0xFF2E7D32.toInt()
         BpCategory.ELEVATED, BpCategory.STAGE_1 -> 0xFFCC8800.toInt()
         BpCategory.STAGE_2, BpCategory.CRISIS -> 0xFFD32F2F.toInt()
@@ -178,7 +181,33 @@ object ReportPdf {
         ctx.y += 18f
         ctx.canvas.drawText("Diastolic range", MARGIN, ctx.y + 12f, label)
         ctx.canvas.drawText("$minDia – $maxDia mmHg", MARGIN + 130f, ctx.y + 12f, value)
-        ctx.y += 26f
+        ctx.y += 18f
+
+        val sittings = groupIntoSittings(readings).size
+        if (sittings < readings.size) {
+            ctx.canvas.drawText("Sittings", MARGIN, ctx.y + 12f, label)
+            ctx.canvas.drawText("$sittings (readings up to 10 minutes apart count as one)", MARGIN + 130f, ctx.y + 12f, value)
+            ctx.y += 18f
+        }
+        val split = timeOfDayAverages(readings, ZoneId.systemDefault())
+        for ((name, avg) in listOf("Morning (before 12:00)" to split.morning, "Afternoon & evening" to split.evening)) {
+            if (avg == null) continue
+            ctx.canvas.drawText(name, MARGIN, ctx.y + 12f, label)
+            ctx.canvas.drawText(
+                "${avg.systolic}/${avg.diastolic} mmHg   ·   ${avg.heartRate} bpm   ·   ${avg.count} readings",
+                MARGIN + 130f, ctx.y + 12f, value
+            )
+            ctx.canvas.drawText(avg.category.label, MARGIN + 390f, ctx.y + 12f, paint(categoryColor(avg.category), 12f, bold = true))
+            ctx.y += 18f
+        }
+        val irregular = readings.count { it.irregularHeartbeat }
+        if (irregular > 0) {
+            ctx.canvas.drawText("Irregular heartbeat", MARGIN, ctx.y + 12f, label)
+            ctx.canvas.drawText("flagged by the monitor on $irregular of ${readings.size} readings (IRR below)",
+                MARGIN + 130f, ctx.y + 12f, value)
+            ctx.y += 18f
+        }
+        ctx.y += 8f
     }
 
     private fun drawChart(ctx: PageContext, ascending: List<Reading>, notes: List<Note>) {
@@ -288,6 +317,9 @@ object ReportPdf {
             ctx.canvas.drawText("${r.systolicMmHg}/${r.diastolicMmHg}", COL_BP, baseline,
                 paint(categoryColor(cat), 10f, bold = true))
             ctx.canvas.drawText("${r.heartRateBpm}", COL_HR, baseline, paint(COLOR_TEXT, 10f))
+            if (r.irregularHeartbeat) {
+                ctx.canvas.drawText("IRR", COL_HR + 20f, baseline, paint(0xFFD32F2F.toInt(), 8f, bold = true))
+            }
             ctx.canvas.drawText(if (r.arm.name == "LEFT") "L" else "R", COL_ARM, baseline, paint(COLOR_TEXT, 10f))
             ctx.canvas.drawText(cat.label, COL_CAT, baseline, paint(categoryColor(cat), 10f))
             ctx.y += rowH

@@ -2,6 +2,7 @@ package com.robcloud.bloodpressure.ui.capture
 
 import android.app.Application
 import androidx.lifecycle.AndroidViewModel
+import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.viewModelScope
 import com.robcloud.bloodpressure.BloodPressureApp
 import com.robcloud.bloodpressure.backup.BackupSyncWorker
@@ -36,6 +37,7 @@ data class CaptureUiState(
     val diastolic: String = "",
     val heartRate: String = "",
     val arm: Arm = Arm.LEFT,
+    val irregularHeartbeat: Boolean = false,
     val takenAt: Instant = Instant.now(),
     /** True once the user picks a date or time; until then the form follows the clock. */
     val takenAtEdited: Boolean = false,
@@ -48,11 +50,12 @@ data class CaptureUiState(
     val backupBanner: String? = null
 )
 
-/** Clears the entry for the next reading; keeps the arm and backup status. */
+/** Clears the entry for the next reading (the irregular-heartbeat flag too); keeps the arm and backup status. */
 internal fun CaptureUiState.afterSave(crisisBp: String?, now: Instant): CaptureUiState = copy(
     systolic = "",
     diastolic = "",
     heartRate = "",
+    irregularHeartbeat = false,
     takenAt = now,
     takenAtEdited = false,
     errorMessage = null,
@@ -63,13 +66,49 @@ internal fun CaptureUiState.afterSave(crisisBp: String?, now: Instant): CaptureU
 /** The time to record: the picked one, or the moment of saving when nothing was picked. */
 internal fun CaptureUiState.effectiveTakenAt(now: Instant): Instant = if (takenAtEdited) takenAt else now
 
-class CaptureViewModel(application: Application) : AndroidViewModel(application) {
+private const val KEY_SYSTOLIC = "systolic"
+private const val KEY_DIASTOLIC = "diastolic"
+private const val KEY_HEART_RATE = "heart_rate"
+private const val KEY_IRREGULAR = "irregular_heartbeat"
+private const val KEY_TAKEN_AT = "taken_at_millis"
+
+/**
+ * The half-typed entry, as plain values for [SavedStateHandle]. Android may kill the app while
+ * it is in the background (checking the monitor, answering a call); this is what brings the
+ * numbers back. A time that wasn't picked isn't saved, since it should follow the clock anyway.
+ */
+internal fun CaptureUiState.toSavedEntry(): Map<String, Any?> = mapOf(
+    KEY_SYSTOLIC to systolic,
+    KEY_DIASTOLIC to diastolic,
+    KEY_HEART_RATE to heartRate,
+    KEY_IRREGULAR to irregularHeartbeat,
+    KEY_TAKEN_AT to if (takenAtEdited) takenAt.toEpochMilli() else null
+)
+
+internal fun CaptureUiState.withSavedEntry(saved: (String) -> Any?): CaptureUiState {
+    val pickedMillis = saved(KEY_TAKEN_AT) as? Long
+    return copy(
+        systolic = saved(KEY_SYSTOLIC) as? String ?: systolic,
+        diastolic = saved(KEY_DIASTOLIC) as? String ?: diastolic,
+        heartRate = saved(KEY_HEART_RATE) as? String ?: heartRate,
+        irregularHeartbeat = saved(KEY_IRREGULAR) as? Boolean ?: irregularHeartbeat,
+        takenAt = pickedMillis?.let(Instant::ofEpochMilli) ?: takenAt,
+        takenAtEdited = pickedMillis != null || takenAtEdited
+    )
+}
+
+class CaptureViewModel(
+    application: Application,
+    private val savedState: SavedStateHandle
+) : AndroidViewModel(application) {
     private val app = application as BloodPressureApp
     private val dao = app.database.readingDao()
     private val noteDao = app.database.noteDao()
     private val prefs = CapturePrefsStore(application)
 
-    private val _uiState = MutableStateFlow(CaptureUiState(arm = prefs.lastArm()))
+    private val _uiState = MutableStateFlow(
+        CaptureUiState(arm = prefs.lastArm()).withSavedEntry { savedState[it] }
+    )
     val uiState: StateFlow<CaptureUiState> = _uiState.asStateFlow()
 
     // Guards against a double tap inserting the same reading twice while the first insert runs.
@@ -91,6 +130,8 @@ class CaptureViewModel(application: Application) : AndroidViewModel(application)
     fun updateSystolic(value: String) = update { it.copy(systolic = value.filterDigits(3), errorMessage = null) }
     fun updateDiastolic(value: String) = update { it.copy(diastolic = value.filterDigits(3), errorMessage = null) }
     fun updateHeartRate(value: String) = update { it.copy(heartRate = value.filterDigits(3), errorMessage = null) }
+
+    fun updateIrregularHeartbeat(value: Boolean) = update { it.copy(irregularHeartbeat = value) }
 
     fun updateArm(arm: Arm) {
         prefs.setLastArm(arm)
@@ -136,7 +177,8 @@ class CaptureViewModel(application: Application) : AndroidViewModel(application)
                         diastolicMmHg = diastolic!!,
                         heartRateBpm = heartRate!!,
                         arm = state.arm,
-                        takenAt = takenAt
+                        takenAt = takenAt,
+                        irregularHeartbeat = state.irregularHeartbeat
                     )
                 )
                 BackupSyncWorker.enqueue(app)
@@ -190,7 +232,9 @@ class CaptureViewModel(application: Application) : AndroidViewModel(application)
     fun consumeCrisisWarning() = update { it.copy(crisisBp = null) }
 
     private fun update(transform: (CaptureUiState) -> CaptureUiState) {
-        _uiState.value = transform(_uiState.value)
+        val next = transform(_uiState.value)
+        _uiState.value = next
+        next.toSavedEntry().forEach { (key, value) -> savedState[key] = value }
     }
 }
 
