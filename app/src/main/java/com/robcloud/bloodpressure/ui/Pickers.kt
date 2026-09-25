@@ -3,32 +3,32 @@ package com.robcloud.bloodpressure.ui
 import android.app.DatePickerDialog
 import android.app.TimePickerDialog
 import android.content.Context
+import android.text.format.DateFormat
+import java.time.Duration
 import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneId
-import java.util.Calendar
+
+/** Readings and notes can't be in the future; the date pickers stop at today. */
+private fun DatePickerDialog.capAtToday(): DatePickerDialog = apply {
+    datePicker.maxDate = System.currentTimeMillis()
+}
 
 fun showDatePicker(context: Context, current: Instant, onPicked: (Instant) -> Unit) {
-    val zone = ZoneId.systemDefault()
-    val zoned = current.atZone(zone)
-    val calendar = Calendar.getInstance().apply {
-        set(zoned.year, zoned.monthValue - 1, zoned.dayOfMonth)
-    }
+    val zoned = current.atZone(ZoneId.systemDefault())
     DatePickerDialog(
         context,
         { _, year, month, dayOfMonth ->
-            val updated = zoned.withYear(year).withMonth(month + 1).withDayOfMonth(dayOfMonth)
-            onPicked(updated.toInstant())
+            onPicked(zoned.with(LocalDate.of(year, month + 1, dayOfMonth)).toInstant())
         },
-        calendar.get(Calendar.YEAR),
-        calendar.get(Calendar.MONTH),
-        calendar.get(Calendar.DAY_OF_MONTH)
-    ).show()
+        zoned.year,
+        zoned.monthValue - 1,
+        zoned.dayOfMonth
+    ).capAtToday().show()
 }
 
 fun showTimePicker(context: Context, current: Instant, onPicked: (Instant) -> Unit) {
-    val zone = ZoneId.systemDefault()
-    val zoned = current.atZone(zone)
+    val zoned = current.atZone(ZoneId.systemDefault())
     TimePickerDialog(
         context,
         { _, hourOfDay, minute ->
@@ -37,7 +37,7 @@ fun showTimePicker(context: Context, current: Instant, onPicked: (Instant) -> Un
         },
         zoned.hour,
         zoned.minute,
-        false
+        DateFormat.is24HourFormat(context)
     ).show()
 }
 
@@ -48,7 +48,7 @@ fun showDatePickerFor(context: Context, current: LocalDate, onPicked: (LocalDate
         current.year,
         current.monthValue - 1,
         current.dayOfMonth
-    ).show()
+    ).capAtToday().show()
 }
 
 fun showTimePickerFor(context: Context, hour: Int, minute: Int, onPicked: (Int, Int) -> Unit) {
@@ -57,7 +57,7 @@ fun showTimePickerFor(context: Context, hour: Int, minute: Int, onPicked: (Int, 
         { _, hourOfDay, pickedMinute -> onPicked(hourOfDay, pickedMinute) },
         hour,
         minute,
-        false
+        DateFormat.is24HourFormat(context)
     ).show()
 }
 
@@ -88,3 +88,10 @@ fun validateReading(systolic: Int?, diastolic: Int?, heartRate: Int?): String? =
     heartRate == null || heartRate !in 30..220 -> "Enter a valid heart rate (30-220 bpm)"
     else -> null
 }
+
+/** A little slack for clock skew and the minute-granular time picker. */
+private val FUTURE_TOLERANCE: Duration = Duration.ofMinutes(5)
+
+/** Error message if [takenAt] is in the future, else null. */
+fun validateTakenAt(takenAt: Instant, now: Instant = Instant.now()): String? =
+    if (takenAt.isAfter(now.plus(FUTURE_TOLERANCE))) "That date and time is in the future — check it" else null

@@ -27,6 +27,10 @@ param(
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
+if ($SkipTests -and -not $DryRun) {
+    throw '-SkipTests is only allowed with -DryRun: a real release must pass the unit tests and screenshot checks.'
+}
+
 $Root = $PSScriptRoot
 # Public fingerprint of release.keystore — published in every APK, so safe to keep here.
 $ExpectedSigner = 'e860205cdfbfca2bd8ad7d9507f8ac4cf5f1470faac0c0744b9cd037e376fb9d'
@@ -68,8 +72,10 @@ Note "$Tag (versionCode $VersionCode)"
 Step 'Reading release notes from the About changelog'
 $aboutPath = Join-Path $Root 'app\src\main\java\com\robcloud\bloodpressure\ui\about\AboutScreen.kt'
 $about = Get-Content $aboutPath -Raw
-$entryPattern = '"' + [regex]::Escape($Version) + '"\s*to\s*listOf\((?<body>.*?)\r?\n\s*\)'
-$entry = [regex]::Match($about, $entryPattern, 'Singleline')
+# The body is a run of string literals, so the match ends at this entry's own ')' however the
+# entry is laid out (a one-line entry used to run on into the next version's bullets).
+$entryPattern = '"' + [regex]::Escape($Version) + '"\s*to\s*listOf\((?<body>(?:\s*"(?:[^"\\]|\\.)*"\s*,?)*)\s*\)'
+$entry = [regex]::Match($about, $entryPattern)
 if (-not $entry.Success) { throw "No CHANGELOG entry for $Version in AboutScreen.kt — add one before publishing." }
 $bullets = [regex]::Matches($entry.Groups['body'].Value, '"((?:[^"\\]|\\.)*)"') |
     ForEach-Object { $_.Groups[1].Value -replace '\\"', '"' -replace '\\\\', '\' }
@@ -83,11 +89,16 @@ $branch = (& git -C $Root rev-parse --abbrev-ref HEAD).Trim()
 if ($branch -ne 'main') { throw "On branch '$branch'; releases are cut from main." }
 if ((& git -C $Root status --porcelain)) { throw 'Working tree has uncommitted changes — commit them first.' }
 & git -C $Root fetch --quiet origin main
+if ($LASTEXITCODE -ne 0) { throw 'git fetch failed — cannot confirm the release commit matches origin/main.' }
+$behind = (& git -C $Root rev-list --count 'HEAD..origin/main').Trim()
+if ($behind -ne '0') { throw "Local main is $behind commit(s) behind origin/main — pull first so the APK is built from the released code." }
 $ahead = (& git -C $Root rev-list --count 'origin/main..HEAD').Trim()
 if ($ahead -ne '0') {
     Note "Pushing $ahead commit(s) so the tag lands on the released code"
     if (-not $DryRun) { & git -C $Root push origin main; if ($LASTEXITCODE -ne 0) { throw 'git push failed' } }
 }
+# The tag is created on exactly the commit that gets built below.
+$Commit = (& git -C $Root rev-parse HEAD).Trim()
 $existing = & $gh release view $Tag --repo hkrob/bp 2>&1
 if ($LASTEXITCODE -eq 0) { throw "Release $Tag already exists — bump the version first." }
 
@@ -133,17 +144,18 @@ $apksigner = if ($sdkRoot) {
     Get-ChildItem (Join-Path $sdkRoot 'build-tools') -Filter 'apksigner.bat' -Recurse -ErrorAction SilentlyContinue |
         Sort-Object { [version]$_.Directory.Name } | Select-Object -Last 1
 }
+# This guard is the one that matters most (a wrong-key APK strands every install), so a missing
+# tool is a failure, not a reason to skip it.
 if (-not $apksigner) {
-    Note 'apksigner not found — skipping signature check'
-} else {
-    $certs = & $apksigner.FullName verify --print-certs $ApkPath 2>&1 | Out-String
-    if ($certs -notmatch 'SHA-256 digest:\s*([0-9a-f]{64})') { throw "Could not read the APK signature:`n$certs" }
-    $actual = $Matches[1]
-    if ($actual -ne $ExpectedSigner) {
-        throw "APK is signed with an unexpected key.`n  expected $ExpectedSigner`n  actual   $actual`nAndroid will refuse to install this over the installed app."
-    }
-    Note 'signer matches the release key'
+    throw 'apksigner not found under the Android SDK build-tools (set ANDROID_HOME) — cannot verify the signing key, not publishing.'
 }
+$certs = & $apksigner.FullName verify --print-certs $ApkPath 2>&1 | Out-String
+if ($certs -notmatch 'SHA-256 digest:\s*([0-9a-f]{64})') { throw "Could not read the APK signature:`n$certs" }
+$actual = $Matches[1]
+if ($actual -ne $ExpectedSigner) {
+    throw "APK is signed with an unexpected key.`n  expected $ExpectedSigner`n  actual   $actual`nAndroid will refuse to install this over the installed app."
+}
+Note 'signer matches the release key'
 
 # --- publish -----------------------------------------------------------------------
 if ($DryRun) {
@@ -153,7 +165,7 @@ if ($DryRun) {
 }
 
 Step "Publishing $Tag"
-& $gh release create $Tag $ApkPath --repo hkrob/bp --title $Tag --notes $Notes
+& $gh release create $Tag $ApkPath --repo hkrob/bp --target $Commit --title $Tag --notes $Notes
 if ($LASTEXITCODE -ne 0) { throw 'gh release create failed' }
 
 Step 'Verifying'

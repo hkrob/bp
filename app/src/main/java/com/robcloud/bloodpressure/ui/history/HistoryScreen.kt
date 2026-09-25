@@ -1,5 +1,8 @@
 package com.robcloud.bloodpressure.ui.history
 
+import android.content.Intent
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -7,7 +10,6 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
-import android.content.Intent
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.FileDownload
 import androidx.compose.material.icons.filled.FileUpload
@@ -28,13 +30,13 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
-import com.robcloud.bloodpressure.backup.StorageHost
 import com.robcloud.bloodpressure.data.BpCategory
 import com.robcloud.bloodpressure.data.Reading
 import com.robcloud.bloodpressure.ui.EqualWidthSegmentedRow
@@ -44,24 +46,36 @@ import kotlin.math.roundToInt
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun HistoryScreen(storageHost: StorageHost, viewModel: HistoryViewModel = viewModel()) {
+fun HistoryScreen(viewModel: HistoryViewModel = viewModel()) {
     val state by viewModel.uiState.collectAsState()
     val message by viewModel.message.collectAsState()
     val pendingReportShare by viewModel.pendingReportShare.collectAsState()
     val snackbarHostState = remember { SnackbarHostState() }
     val context = LocalContext.current
     var editingReading by remember { mutableStateOf<Reading?>(null) }
-    var exportDialogOpen by remember { mutableStateOf(false) }
+    var exportDialogOpen by rememberSaveable { mutableStateOf(false) }
+
+    // Registered through Compose rather than bridged via the Activity, so a result that arrives
+    // after the Activity was recreated (rotation, dark-mode switch) still reaches the ViewModel.
+    val importLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        uri?.let(viewModel::importCsv)
+    }
+    val backupFolderLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri ->
+        uri?.let(viewModel::setBackupFolder)
+    }
+    val pickBackupFolder = { backupFolderLauncher.launch(null) }
 
     LaunchedEffect(message) {
-        message?.let {
-            snackbarHostState.showSnackbar(it)
-            viewModel.consumeMessage()
-        }
+        val text = message ?: return@LaunchedEffect
+        // Consume before showing: the snackbar suspends until dismissed, and leaving the tab
+        // meanwhile would otherwise replay the message on the next visit.
+        viewModel.consumeMessage()
+        snackbarHostState.showSnackbar(text)
     }
 
     LaunchedEffect(pendingReportShare) {
         pendingReportShare?.let { uri ->
+            viewModel.consumeReportShare()
             val share = Intent(Intent.ACTION_SEND).apply {
                 type = "application/pdf"
                 putExtra(Intent.EXTRA_STREAM, uri)
@@ -69,13 +83,11 @@ fun HistoryScreen(storageHost: StorageHost, viewModel: HistoryViewModel = viewMo
                 addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
             }
             context.startActivity(Intent.createChooser(share, "Share report"))
-            viewModel.consumeReportShare()
         }
     }
 
     if (exportDialogOpen) {
         ExportCsvDialog(
-            storageHost = storageHost,
             defaultFileName = "bloodPressureReadings",
             onDismiss = { exportDialogOpen = false },
             onExport = { folderUri, fileName ->
@@ -101,61 +113,66 @@ fun HistoryScreen(storageHost: StorageHost, viewModel: HistoryViewModel = viewMo
     }
 
     Box(Modifier.fillMaxSize()) {
-        Column(Modifier.fillMaxSize()) {
-            Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Text("History", style = MaterialTheme.typography.headlineMedium)
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        IconButton(onClick = { viewModel.importCsv(storageHost) }) {
-                            Icon(Icons.Filled.FileUpload, contentDescription = "Import CSV")
-                        }
-                        IconButton(onClick = { exportDialogOpen = true }) {
-                            Icon(Icons.Filled.FileDownload, contentDescription = "Export CSV")
-                        }
-                        IconButton(onClick = { viewModel.generateReport() }) {
-                            Icon(Icons.Filled.PictureAsPdf, contentDescription = "Share PDF report")
-                        }
-                        SyncButton(
-                            state,
-                            onClick = {
-                                if (state.backupFolderName == null) {
-                                    viewModel.chooseFolder(storageHost)
-                                } else {
-                                    viewModel.syncNow()
+        // One scrolling list, summary first: with a fixed summary above the table, landscape or
+        // a large font left the table no height at all.
+        ReadingsTable(
+            readings = state.readings,
+            onRowClick = { editingReading = it },
+            modifier = Modifier.fillMaxSize(),
+            header = {
+                Column {
+                    Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text("History", style = MaterialTheme.typography.headlineMedium)
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                IconButton(onClick = { importLauncher.launch(arrayOf("*/*")) }) {
+                                    Icon(Icons.Filled.FileUpload, contentDescription = "Import CSV")
                                 }
+                                IconButton(onClick = { exportDialogOpen = true }) {
+                                    Icon(Icons.Filled.FileDownload, contentDescription = "Export CSV")
+                                }
+                                IconButton(onClick = { viewModel.generateReport() }) {
+                                    Icon(Icons.Filled.PictureAsPdf, contentDescription = "Share PDF report")
+                                }
+                                SyncButton(
+                                    state,
+                                    onClick = {
+                                        if (!state.backup.configured || state.backup.needsRelink) {
+                                            pickBackupFolder()
+                                        } else {
+                                            viewModel.syncNow()
+                                        }
+                                    }
+                                )
                             }
+                        }
+
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            SyncStatusLine(state, Modifier.weight(1f))
+                            if (state.backup.configured && !state.backup.needsRelink && !state.syncing) {
+                                TextButton(onClick = pickBackupFolder) { Text("Change") }
+                            }
+                        }
+
+                        EqualWidthSegmentedRow(
+                            options = Period.entries,
+                            selected = state.period,
+                            label = { it.label },
+                            onSelect = viewModel::selectPeriod
                         )
+
+                        PeriodStatsRow(state.readings)
+
+                        ReadingsChart(state.readings)
                     }
+                    HorizontalDivider()
                 }
-
-                SyncStatusLine(state)
-
-                EqualWidthSegmentedRow(
-                    options = Period.entries,
-                    selected = state.period,
-                    label = { it.label },
-                    onSelect = viewModel::selectPeriod
-                )
-
-                PeriodStatsRow(state.readings)
-
-                ReadingsChart(state.readings)
             }
-
-            HorizontalDivider()
-
-            ReadingsTable(
-                readings = state.readings,
-                onRowClick = { editingReading = it },
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(top = 4.dp)
-            )
-        }
+        )
 
         SnackbarHost(
             hostState = snackbarHostState,
@@ -209,33 +226,44 @@ private fun PeriodStatsRow(readings: List<Reading>) {
 
 @Composable
 private fun SyncButton(state: HistoryUiState, onClick: () -> Unit) {
-    if (state.syncStatus == SyncStatus.SYNCING) {
+    if (state.syncing) {
         CircularProgressIndicator(modifier = Modifier.padding(8.dp))
     } else {
         TextButton(onClick = onClick) {
-            Text(if (state.backupFolderName == null) "Set backup" else "Sync now")
+            Text(
+                when {
+                    !state.backup.configured -> "Set backup"
+                    state.backup.needsRelink -> "Re-link"
+                    else -> "Sync now"
+                }
+            )
         }
     }
 }
 
 @Composable
-private fun SyncStatusLine(state: HistoryUiState) {
+private fun SyncStatusLine(state: HistoryUiState, modifier: Modifier = Modifier) {
+    val backup = state.backup
     val readingWord = if (state.totalReadingsCount == 1) "reading" else "readings"
     val text = when {
-        state.syncStatus == SyncStatus.ERROR && state.syncError != null ->
-            "Sync failed: ${state.syncError}"
-        state.backupFolderName == null ->
+        !backup.configured ->
             "No backup folder chosen yet · ${state.totalReadingsCount} $readingWord saved locally"
-        state.lastSyncedAt != null -> {
-            val staleNote = if (state.isBackupStale) " · tap Sync now, it's been a while" else ""
-            "Backed up to \"${state.backupFolderName}\" · last synced ${Formatters.dateTime(state.lastSyncedAt)}$staleNote"
+        backup.needsRelink ->
+            "Lost access to \"${backup.folderName}\" (for example after moving to a new phone) · tap Re-link and choose it again"
+        backup.lastError != null && !state.syncing -> {
+            val lastGood = backup.lastSyncedAt?.let { " · last good sync ${Formatters.dateTime(it)}" }.orEmpty()
+            "Sync failed: ${backup.lastError}$lastGood"
         }
-        else -> "Backup folder: \"${state.backupFolderName}\" · not yet synced"
+        backup.lastSyncedAt != null -> {
+            val staleNote = if (state.isBackupStale) " · tap Sync now, it's been a while" else ""
+            "Backed up to \"${backup.folderName}\" · last synced ${Formatters.dateTime(backup.lastSyncedAt)}$staleNote"
+        }
+        else -> "Backup folder: \"${backup.folderName}\" · not yet synced"
     }
     val color = when {
-        state.syncStatus == SyncStatus.ERROR -> MaterialTheme.colorScheme.error
+        backup.needsRelink || (backup.lastError != null && !state.syncing) -> MaterialTheme.colorScheme.error
         state.isBackupStale -> StatusElevated
         else -> MaterialTheme.colorScheme.onSurfaceVariant
     }
-    Text(text, style = MaterialTheme.typography.bodyMedium, color = color)
+    Text(text, style = MaterialTheme.typography.bodyMedium, color = color, modifier = modifier)
 }

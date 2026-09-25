@@ -34,6 +34,7 @@ import com.patrykandpatrick.vico.compose.cartesian.layer.rememberLineCartesianLa
 import com.patrykandpatrick.vico.compose.cartesian.rememberCartesianChart
 import com.patrykandpatrick.vico.compose.cartesian.rememberVicoScrollState
 import com.patrykandpatrick.vico.compose.common.Fill
+import com.patrykandpatrick.vico.compose.common.component.rememberShapeComponent
 import com.robcloud.bloodpressure.data.Reading
 import com.robcloud.bloodpressure.ui.theme.LocalChartColors
 import java.time.Instant
@@ -87,9 +88,18 @@ fun ReadingsChart(readings: List<Reading>, modifier: Modifier = Modifier) {
     val chartColors = LocalChartColors.current
     val lineColors = listOf(chartColors.systolic, chartColors.diastolic, chartColors.heartRate)
 
+    // A line needs two points; with a single reading in the period, draw it as a dot instead of
+    // leaving the chart looking empty.
+    val singleReading = sorted.size == 1
     val dataLines = lineColors.map { color ->
+        val dot = rememberShapeComponent(Fill(color), CircleShape)
         LineCartesianLayer.rememberLine(
-            fill = LineCartesianLayer.LineFill.single(Fill(color))
+            fill = LineCartesianLayer.LineFill.single(Fill(color)),
+            pointProvider = if (singleReading) {
+                LineCartesianLayer.PointProvider.single(LineCartesianLayer.Point(dot, 8.dp))
+            } else {
+                null
+            }
         )
     }
 

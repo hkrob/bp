@@ -9,6 +9,7 @@ import androidx.core.content.FileProvider
 import android.net.Uri
 import com.robcloud.bloodpressure.data.BpCategory
 import com.robcloud.bloodpressure.data.Note
+import com.robcloud.bloodpressure.data.NoteType
 import com.robcloud.bloodpressure.data.Reading
 import com.robcloud.bloodpressure.data.bpCategory
 import java.io.File
@@ -34,13 +35,16 @@ object ReportPdf {
     private const val CONTENT_RIGHT = PAGE_WIDTH - MARGIN
     private const val BOTTOM_LIMIT = PAGE_HEIGHT - MARGIN
 
-    private val dateFmt: DateTimeFormatter =
-        DateTimeFormatter.ofPattern("d MMM yyyy").withZone(ZoneId.systemDefault())
-    private val timeFmt: DateTimeFormatter =
-        DateTimeFormatter.ofPattern("h:mm a").withZone(ZoneId.systemDefault())
-    private val fileStampFmt: DateTimeFormatter =
-        DateTimeFormatter.ofPattern("yyyy-MM-dd").withZone(ZoneId.systemDefault())
+    // Getters, not stored values: the zone is read per use, so a time-zone change while the app
+    // is running doesn't leave the report disagreeing with the rest of the app.
+    private val dateFmt: DateTimeFormatter
+        get() = DateTimeFormatter.ofPattern("d MMM yyyy").withZone(ZoneId.systemDefault())
+    private val timeFmt: DateTimeFormatter
+        get() = DateTimeFormatter.ofPattern("h:mm a").withZone(ZoneId.systemDefault())
+    private val fileStampFmt: DateTimeFormatter
+        get() = DateTimeFormatter.ofPattern("yyyy-MM-dd").withZone(ZoneId.systemDefault())
     private val chartAxisFmt: DateTimeFormatter = DateTimeFormatter.ofPattern("d MMM")
+    private val noteTimeFmt: DateTimeFormatter = DateTimeFormatter.ofPattern("h:mm a")
 
     private const val COLOR_TEXT = 0xFF1A1A1A.toInt()
     private const val COLOR_MUTED = 0xFF6B6B6B.toInt()
@@ -227,13 +231,19 @@ object ReportPdf {
         series({ it.diastolicMmHg }, COLOR_DIA)
         series({ it.systolicMmHg }, COLOR_SYS)
 
-        // Note markers on the systolic line (systolic interpolated at each note date).
+        // Note markers on the systolic line (systolic interpolated at each note's time). A note on
+        // the first or last reading's day but outside its hours (e.g. the check-up that starts a
+        // "Since Check Up" report, logged at 00:01) is pinned to that edge rather than dropped.
+        val zone = ZoneId.systemDefault()
         val sysY = ascending.map { it.systolicMmHg.toDouble() }
         val notePaint = Paint().apply { color = COLOR_NOTE; isAntiAlias = true; style = Paint.Style.FILL }
-        val noteDates = notes.map { it.date }.distinct()
-        for (d in noteDates) {
-            val t = d.atStartOfDay(ZoneId.systemDefault()).toEpochSecond().toDouble()
-            if (t < minX || t > maxX) continue
+        val firstDay = ascending.first().takenAt.atZone(zone).toLocalDate()
+        val lastDay = ascending.last().takenAt.atZone(zone).toLocalDate()
+        val markerTimes = notes
+            .filter { !it.date.isBefore(firstDay) && !it.date.isAfter(lastDay) }
+            .map { it.date.atTime(it.time).atZone(zone).toEpochSecond().toDouble().coerceIn(minX, maxX) }
+            .distinct()
+        for (t in markerTimes) {
             val v = interpolate(t, xs, sysY)
             ctx.canvas.drawCircle(px(t), py(v.toFloat()), 4f, notePaint)
         }
@@ -250,7 +260,7 @@ object ReportPdf {
         drawLegendDot(ctx, lx, "Systolic", COLOR_SYS, 0f)
         drawLegendDot(ctx, lx, "Diastolic", COLOR_DIA, 90f)
         drawLegendDot(ctx, lx, "Heart rate", COLOR_HR, 185f)
-        if (noteDates.isNotEmpty()) drawLegendDot(ctx, lx, "Note", COLOR_NOTE, 290f)
+        if (markerTimes.isNotEmpty()) drawLegendDot(ctx, lx, "Note", COLOR_NOTE, 290f)
         ctx.y += 24f
     }
 
@@ -312,7 +322,9 @@ object ReportPdf {
         ctx.canvas.drawText("Notes", MARGIN, ctx.y + 14f, paint(COLOR_TEXT, 14f, bold = true))
         ctx.y += 24f
         for (n in notes) {
-            val head = "${dateFmt.format(n.date.atStartOfDay(ZoneId.systemDefault()).toInstant())}   " +
+            // Medication Taken notes carry the time the dose was taken — the only detail they have.
+            val time = if (n.noteType == NoteType.MEDICATION_TAKEN) "  ${noteTimeFmt.format(n.time)}" else ""
+            val head = "${dateFmt.format(n.date.atStartOfDay(ZoneId.systemDefault()).toInstant())}$time   " +
                 "[${n.noteType.abbreviation}] ${n.noteType.label}"
             ctx.ensure(16f)
             ctx.canvas.drawText(head, MARGIN, ctx.y + 12f, paint(COLOR_TEXT, 11f, bold = true))
@@ -331,23 +343,43 @@ object ReportPdf {
             Paint().apply { color = COLOR_RULE; strokeWidth = 0.5f })
     }
 
-    /** Greedy word-wrap to [maxWidth] using the paint's measured text width. */
+    /**
+     * Greedy word-wrap to [maxWidth] using the paint's measured text width. Keeps the note's own
+     * line breaks, and splits a single word too long for a line (a URL, say) rather than letting
+     * it run off the page.
+     */
     private fun wrap(text: String, paint: Paint, maxWidth: Float): List<String> {
         if (text.isBlank()) return emptyList()
-        val words = text.split(Regex("\\s+"))
         val lines = mutableListOf<String>()
-        var current = StringBuilder()
-        for (w in words) {
-            val candidate = if (current.isEmpty()) w else "$current $w"
-            if (paint.measureText(candidate) > maxWidth && current.isNotEmpty()) {
-                lines.add(current.toString())
-                current = StringBuilder(w)
-            } else {
-                current = StringBuilder(candidate)
+        for (paragraph in text.trim().lines()) {
+            var current = ""
+            for (word in paragraph.split(Regex("\\s+")).filter { it.isNotEmpty() }) {
+                for (piece in splitToWidth(word, paint, maxWidth)) {
+                    val candidate = if (current.isEmpty()) piece else "$current $piece"
+                    if (paint.measureText(candidate) > maxWidth && current.isNotEmpty()) {
+                        lines.add(current)
+                        current = piece
+                    } else {
+                        current = candidate
+                    }
+                }
             }
+            lines.add(current)
         }
-        if (current.isNotEmpty()) lines.add(current.toString())
         return lines
+    }
+
+    private fun splitToWidth(word: String, paint: Paint, maxWidth: Float): List<String> {
+        if (paint.measureText(word) <= maxWidth) return listOf(word)
+        val pieces = mutableListOf<String>()
+        var start = 0
+        while (start < word.length) {
+            var end = start + 1
+            while (end < word.length && paint.measureText(word, start, end + 1) <= maxWidth) end++
+            pieces.add(word.substring(start, end))
+            start = end
+        }
+        return pieces
     }
 
     private fun interpolate(x: Double, xs: List<Double>, ys: List<Double>): Double {

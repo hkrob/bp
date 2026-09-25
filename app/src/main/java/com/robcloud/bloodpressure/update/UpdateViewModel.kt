@@ -35,6 +35,9 @@ class UpdateViewModel(application: Application) : AndroidViewModel(application) 
         val cached = store.loadLatestRelease()
         if (cached != null && UpdateManager.isNewer(cached.versionName, BuildConfig.VERSION_NAME)) {
             _cachedRelease.value = cached
+            // The Add reading banner sends the user here: show the update straight away rather
+            // than an idle "Check for updates" button.
+            _state.value = UpdateUiState.Available(cached)
         } else if (cached != null) {
             store.clearLatestRelease()
         }

@@ -25,8 +25,8 @@ android {
         applicationId = "com.robcloud.bloodpressure"
         minSdk = 26
         targetSdk = 36
-        versionCode = 27
-        versionName = "2.5.11"
+        versionCode = 28
+        versionName = "2.6.0"
 
         buildConfigField(
             "String",
@@ -76,6 +76,12 @@ android {
         compose = true
         buildConfig = true
     }
+}
+
+// Room writes each schema version as JSON here. Commit the files: they are what a future
+// migration is written and checked against (table and column names only, no data).
+ksp {
+    arg("room.schemaLocation", "$projectDir/schemas")
 }
 
 kotlin {

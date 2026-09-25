@@ -29,6 +29,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -38,6 +39,8 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.robcloud.bloodpressure.BloodPressureApp
 import com.robcloud.bloodpressure.BuildConfig
+import com.robcloud.bloodpressure.backup.BackupStatus
+import com.robcloud.bloodpressure.backup.status
 import com.robcloud.bloodpressure.ui.EqualWidthSegmentedRow
 import com.robcloud.bloodpressure.ui.Formatters
 import com.robcloud.bloodpressure.update.UpdateCheckFrequency
@@ -46,19 +49,30 @@ import com.robcloud.bloodpressure.update.UpdatePrefsStore
 import com.robcloud.bloodpressure.update.UpdateScheduler
 import com.robcloud.bloodpressure.update.UpdateUiState
 import com.robcloud.bloodpressure.update.UpdateViewModel
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
+import java.time.Duration
+import java.time.Instant
 
 private const val FEEDBACK_EMAIL = "android.bp@robcloud.qzz.io"
 
 /** Newest first; keep the three most recent versions here (older entries drop off). */
 private val CHANGELOG = listOf(
+    "2.6.0" to listOf(
+        "Safer backups: a sync can no longer undo an edit or bring back a deleted reading, rows the app can't read are never overwritten, a readings.csv written by another app is left alone, and a dated copy of the backup file is kept each day.",
+        "You can now change the backup folder, and after moving to a new phone the app asks you to re-link it instead of failing silently. Backups that keep failing now show a warning on Add reading.",
+        "Add reading remembers which arm you use, keeps a date or time you picked when you switch apps, won't save a reading twice on a double tap, and won't accept a time in the future.",
+        "Medication Taken notes added from the Add note tab record the real time, and the time can be corrected when editing.",
+        "Daily reminders stay at the time you set (they used to drift later and shift by an hour at daylight-saving changes), and the app tells you when notifications are blocked.",
+        "Import only adds readings and notes that are missing, so it no longer reverts later edits, and large files now import on Android 8-11.",
+        "History scrolls as one page, so the readings list no longer vanishes in landscape, and older readings show their year.",
+        "Fixes to the PDF report (note markers, medication times, long notes), Log column alignment, 24-hour time pickers and status bar icons in Dark and Console themes."
+    ),
     "2.5.11" to listOf(
         "Last reading card: the date/time no longer wraps awkwardly across the reading — it now sits on its own tidy line at the bottom."
     ),
     "2.5.10" to listOf(
         "Backup section on the About tab now names the storage provider (Google Drive, Dropbox, OneDrive, Box, or \"this device's local storage\") instead of just the folder name, so it's always clear where your data actually is."
-    ),
-    "2.5.9" to listOf(
-        "About tab now shows a Backup section: where your data is synced, when it last synced, and a warning if the folder is only local storage rather than a cloud location."
     ),
 )
 
@@ -103,8 +117,9 @@ fun AboutScreen(updateViewModel: UpdateViewModel = viewModel()) {
 
         Text(
             "Capture readings and notes, review trends and dates side by side on the " +
-                "History chart, browse a dense text log, back up automatically once a day, " +
-                "and set daily reminders to keep your readings up to date.",
+                "History chart, browse a dense text log, back up automatically after every " +
+                "change (with a dated copy kept each day), and set daily reminders to keep " +
+                "your readings up to date.",
             style = MaterialTheme.typography.bodyMedium
         )
 
@@ -126,27 +141,35 @@ fun AboutScreen(updateViewModel: UpdateViewModel = viewModel()) {
 }
 
 /**
- * Where readings/notes are mirrored to, if anywhere. Reads [com.robcloud.bloodpressure.backup.BackupFolderStore]
- * directly — About is a plain info screen with no ViewModel of its own, and this tab is torn
- * down and recomposed fresh on every visit (see `MainActivity`'s tab switcher), so a one-shot
- * `remember` here always reflects the current folder without needing a lifecycle hook.
+ * Where readings/notes are mirrored to, if anywhere, and whether that is working. Reads
+ * [com.robcloud.bloodpressure.backup.BackupFolderStore] directly — About is a plain info screen
+ * with no ViewModel of its own, and this tab is torn down and recomposed fresh on every visit (see
+ * `MainActivity`'s tab switcher), so loading once per visit always reflects the current state.
+ * Loaded on the IO dispatcher: resolving the folder name is a storage-provider call.
  */
 @Composable
 private fun BackupSection() {
     val context = LocalContext.current
     val store = remember { (context.applicationContext as BloodPressureApp).backupFolderStore }
-    val folderName = remember { store.displayName() }
-    val lastSyncedAt = remember { store.getLastSyncedAt() }
-    val isLocalOnly = remember { store.isLocalOnly() }
-    val providerLabel = remember { store.providerLabel() }
-    val atRisk = folderName == null || isLocalOnly
+    val status by produceState<BackupStatus?>(initialValue = null, store) {
+        value = withContext(Dispatchers.IO) {
+            store.displayName()
+            store.status()
+        }
+    }
+    val backup = status ?: return
+    val folderName = backup.folderName
+    val stale = backup.lastSyncedAt == null ||
+        backup.lastSyncedAt.isBefore(Instant.now().minus(Duration.ofDays(7)))
+    val failing = backup.lastError != null
+    val atRisk = folderName == null || backup.needsRelink || failing || backup.localOnly || stale
     // "Documents" alone doesn't say whether that's a cloud folder or plain device storage —
     // spell out the provider when we recognise it (Drive, Dropbox, ...), or fall back to a
     // generic "cloud storage" so the destination is never ambiguous.
     val destination = when {
         folderName == null -> null
-        isLocalOnly -> "\"$folderName\" (this device's local storage)"
-        providerLabel != null -> "\"$folderName\" on $providerLabel"
+        backup.localOnly -> "\"$folderName\" (this device's local storage)"
+        backup.providerLabel != null -> "\"$folderName\" on ${backup.providerLabel}"
         else -> "\"$folderName\" (cloud storage)"
     }
 
@@ -160,16 +183,29 @@ private fun BackupSection() {
                 when {
                     destination == null ->
                         "Not backed up — no folder set. Choose one from the History tab."
-                    isLocalOnly ->
+                    backup.needsRelink ->
+                        "Lost access to $destination (for example after moving to a new phone). Re-link it from the History tab."
+                    failing ->
+                        "Backups to $destination are failing: ${backup.lastError}"
+                    backup.localOnly ->
                         "Backed up to $destination — won't survive a lost or wiped phone."
-                    lastSyncedAt != null ->
-                        "Backed up to $destination · last synced ${Formatters.dateTime(lastSyncedAt)}"
+                    backup.lastSyncedAt != null ->
+                        "Backed up to $destination · last synced ${Formatters.dateTime(backup.lastSyncedAt)}"
                     else ->
                         "Backup folder: $destination · not yet synced"
                 },
                 style = MaterialTheme.typography.bodyMedium,
                 color = if (atRisk) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant
             )
+            if (destination != null) {
+                Text(
+                    "Each day the previous backup file is also kept in a \"snapshots\" folder beside it " +
+                        "(every day for two weeks, then one a month for a year). To go back to one, use " +
+                        "Import CSV on the History tab.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
         }
     }
 }

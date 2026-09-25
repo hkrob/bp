@@ -34,16 +34,39 @@ never values.
 
 1. Bump `versionCode` and `versionName` in `app/build.gradle.kts`.
 2. Add a `CHANGELOG` entry for the new `versionName` in `AboutScreen.kt`. The workflow reads
-   the release notes from it and fails if it is missing or empty.
-3. Merge to `main`.
-4. Run the **Release** workflow (`workflow_dispatch`), or push a `v<versionName>` tag.
+   the release notes from it and fails if it is missing or empty. Write literal characters (`—`,
+   `·`), not Kotlin `\u` escapes: only `\"` and `\\` are unescaped.
+3. If the Room schema changed, commit the new `app/schemas/.../<version>.json` together with its
+   `Migration`. The app refuses to open a database it has no migration for.
+4. Merge to `main`.
+5. Run the **Release** workflow (`workflow_dispatch`), or push a `v<versionName>` tag.
 
-Tick **dry_run** to build, test and check the signature without publishing.
+Tick **dry_run** to build, test and check the signature without publishing. Dry runs work from
+any branch, which makes them a good check on a pull request before merging. A real release must
+be dispatched on a commit that is on `main`.
+
+### Local fallback: `publish-release.ps1`
+
+If Actions is unavailable, `pwsh ./publish-release.ps1` does the same from the machine that holds
+`release.keystore` (`-DryRun` stops short of publishing). It applies the same checks, plus:
+
+- It must run on `main` with a clean tree, and not be behind `origin/main`. It pushes any local
+  commits, then tags exactly the commit it built.
+- `apksigner` must be found under the Android SDK. If it can't verify the signature, it doesn't
+  publish.
+- `-SkipTests` is only accepted together with `-DryRun`.
+
+Creating the release this way pushes a tag, which starts the workflow. The workflow sees the
+release already exists and finishes as a no-op.
 
 ## What the workflow refuses to do
 
-- Publish when a release for that tag already exists.
-- Publish when a pushed tag disagrees with `versionName`.
+- Publish when a release for that tag already exists. (A tag push for a release that already
+  exists — which is what `publish-release.ps1` triggers when it creates the release — is skipped
+  as a no-op rather than failing.)
+- Publish when a pushed tag disagrees with `versionName`, or an existing tag points at a
+  different commit than the one being built.
+- Publish a commit that is not on `main`.
 - Publish when there is no changelog entry for the version.
 - Publish when tests or the Paparazzi snapshots fail (diffs are uploaded as an artifact).
 - Publish an APK whose signing certificate is not `EXPECTED_SIGNER`. Android refuses to install

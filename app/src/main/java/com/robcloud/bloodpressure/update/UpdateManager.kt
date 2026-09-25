@@ -55,7 +55,8 @@ object UpdateManager {
             if (conn.responseCode != HttpURLConnection.HTTP_OK) return@withContext null
             val obj = JSONObject(conn.inputStream.bufferedReader().use { it.readText() })
             val versionName = obj.getString("tag_name").trim().removePrefix("v").removePrefix("V")
-            val notes = obj.optString("body", "")
+            // optString turns a JSON null into the text "null"; a release with no notes has body: null.
+            val notes = if (obj.isNull("body")) "" else obj.optString("body", "")
             val assets = obj.getJSONArray("assets")
             for (i in 0 until assets.length()) {
                 val a = assets.getJSONObject(i)

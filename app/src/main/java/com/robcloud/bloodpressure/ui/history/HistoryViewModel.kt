@@ -4,24 +4,29 @@ import android.app.Application
 import android.net.Uri
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import androidx.room.withTransaction
 import com.robcloud.bloodpressure.BloodPressureApp
+import com.robcloud.bloodpressure.backup.BackupStatus
 import com.robcloud.bloodpressure.backup.BackupSyncWorker
 import com.robcloud.bloodpressure.backup.Csv
 import com.robcloud.bloodpressure.backup.NoBackupFolderSelectedException
-import com.robcloud.bloodpressure.backup.StorageHost
-import com.robcloud.bloodpressure.data.DeletedNote
-import com.robcloud.bloodpressure.data.DeletedReading
+import com.robcloud.bloodpressure.backup.SafFolder
+import com.robcloud.bloodpressure.backup.planMerge
+import com.robcloud.bloodpressure.backup.status
+import com.robcloud.bloodpressure.backup.unreadableRowsNotice
 import com.robcloud.bloodpressure.data.Note
 import com.robcloud.bloodpressure.data.NoteType
 import com.robcloud.bloodpressure.data.Reading
 import com.robcloud.bloodpressure.report.ReportPdf
 import com.robcloud.bloodpressure.widget.LastReadingWidgetProvider
-import androidx.documentfile.provider.DocumentFile
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.flowOn
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -38,8 +43,6 @@ enum class Period(val label: String) {
     ALL("All time")
 }
 
-enum class SyncStatus { IDLE, SYNCING, ERROR }
-
 private val STALE_BACKUP_THRESHOLD_DAYS = 7L
 
 data class HistoryUiState(
@@ -48,34 +51,31 @@ data class HistoryUiState(
     val allReadings: List<Reading> = emptyList(),
     val allNotes: List<Note> = emptyList(),
     val totalReadingsCount: Int = 0,
-    val syncStatus: SyncStatus = SyncStatus.IDLE,
-    val lastSyncedAt: Instant? = null,
-    val syncError: String? = null,
-    val backupFolderName: String? = null
+    val syncing: Boolean = false,
+    val backup: BackupStatus = BackupStatus()
 ) {
     /** True when a backup folder is set but hasn't synced in over a week (or ever). */
     val isBackupStale: Boolean
-        get() = backupFolderName != null &&
-            (lastSyncedAt == null || lastSyncedAt.isBefore(Instant.now().minus(STALE_BACKUP_THRESHOLD_DAYS, ChronoUnit.DAYS)))
+        get() = backup.configured &&
+            (backup.lastSyncedAt == null ||
+                backup.lastSyncedAt.isBefore(Instant.now().minus(STALE_BACKUP_THRESHOLD_DAYS, ChronoUnit.DAYS)))
 }
 
-private data class SyncMeta(
-    val status: SyncStatus,
-    val lastSyncedAt: Instant?,
-    val error: String?,
-    val folderName: String?
-)
-
+/**
+ * Shared by the History and Log tabs (both use the Activity-scoped instance). Every storage
+ * provider call runs on [Dispatchers.IO]: for Google Drive they can block on the network.
+ */
 class HistoryViewModel(application: Application) : AndroidViewModel(application) {
     private val app = application as BloodPressureApp
     private val dao = app.database.readingDao()
     private val noteDao = app.database.noteDao()
+    private val store = app.backupFolderStore
 
     private val period = MutableStateFlow(Period.MONTH)
-    private val syncStatus = MutableStateFlow(SyncStatus.IDLE)
-    private val lastSyncedAt = MutableStateFlow(app.backupFolderStore.getLastSyncedAt())
-    private val syncError = MutableStateFlow<String?>(null)
-    private val folderName = MutableStateFlow(app.backupFolderStore.displayName())
+    private val syncing = MutableStateFlow(false)
+
+    // Follows the stored status, so background syncs (after-save, daily) show up here too.
+    private val backupStatus = store.changes().map { store.status() }.flowOn(Dispatchers.IO)
 
     /** One-shot user-facing messages (import/export results), consumed by a snackbar. */
     val message = MutableStateFlow<String?>(null)
@@ -83,24 +83,26 @@ class HistoryViewModel(application: Application) : AndroidViewModel(application)
     /** Set to a shareable report PDF Uri when one is ready; the screen launches the share sheet. */
     val pendingReportShare = MutableStateFlow<Uri?>(null)
 
-    private val syncMeta = combine(syncStatus, lastSyncedAt, syncError, folderName) { status, synced, error, folder ->
-        SyncMeta(status, synced, error, folder)
-    }
-
     val uiState: StateFlow<HistoryUiState> =
-        combine(dao.observeAll(), noteDao.observeAll(), period, syncMeta) { readings, notes, period, meta ->
+        combine(dao.observeAll(), noteDao.observeAll(), period, syncing, backupStatus) { readings, notes, period, syncing, backup ->
             HistoryUiState(
                 period = period,
                 readings = filterByPeriod(readings, period, notes),
                 allReadings = readings,
                 allNotes = notes,
                 totalReadingsCount = readings.size,
-                syncStatus = meta.status,
-                lastSyncedAt = meta.lastSyncedAt,
-                syncError = meta.error,
-                backupFolderName = meta.folderName
+                syncing = syncing,
+                backup = backup
             )
         }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), HistoryUiState())
+
+    init {
+        viewModelScope.launch(Dispatchers.IO) {
+            // Refreshes the cached folder name from the provider (the status flow picks it up).
+            store.displayName()
+            store.takePendingNotice()?.let { message.value = it }
+        }
+    }
 
     fun selectPeriod(newPeriod: Period) {
         period.value = newPeriod
@@ -128,6 +130,8 @@ class HistoryViewModel(application: Application) : AndroidViewModel(application)
                     )
                 }
                 pendingReportShare.value = uri
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 message.value = "Report failed: ${e.message}"
             }
@@ -148,8 +152,7 @@ class HistoryViewModel(application: Application) : AndroidViewModel(application)
 
     fun deleteReading(reading: Reading) {
         viewModelScope.launch {
-            dao.deleteById(reading.id)
-            dao.insertTombstone(DeletedReading(reading.id))
+            dao.deleteWithTombstone(reading.id)
             BackupSyncWorker.enqueue(app)
             LastReadingWidgetProvider.refresh(app)
             message.value = "Reading deleted"
@@ -165,88 +168,134 @@ class HistoryViewModel(application: Application) : AndroidViewModel(application)
 
     fun deleteNote(note: Note) {
         viewModelScope.launch {
-            noteDao.deleteById(note.id)
-            noteDao.insertTombstone(DeletedNote(note.id))
+            noteDao.deleteWithTombstone(note.id)
             BackupSyncWorker.enqueue(app)
             message.value = "Note deleted"
         }
     }
 
+    /** Writes every reading and note to [fileName] in [folderUri], replacing a file of that name. */
     fun exportCsvTo(folderUri: Uri, fileName: String) {
         viewModelScope.launch {
             try {
-                val folder = DocumentFile.fromTreeUri(app, folderUri)
-                    ?: error("Chosen folder is no longer accessible")
-                folder.findFile(fileName)?.delete()
-                val target = folder.createFile("text/csv", fileName)
-                    ?: error("Could not create $fileName in the chosen folder")
                 val readings = dao.getAll()
                 val notes = noteDao.getAll()
-                val csv = Csv.write(readings, notes)
-                app.contentResolver.openOutputStream(target.uri, "wt")?.use { output ->
-                    output.write(csv.toByteArray(Charsets.UTF_8))
-                } ?: error("Could not open the chosen file for writing")
-                message.value = "Exported ${pluralize(readings.size, "reading")}, ${pluralize(notes.size, "note")}"
+                if (readings.isEmpty() && notes.isEmpty()) {
+                    message.value = "Nothing to export yet"
+                    return@launch
+                }
+                val replaced = withContext(Dispatchers.IO) {
+                    val folder = SafFolder(app.contentResolver, folderUri)
+                    val csv = Csv.write(readings, notes)
+                    // Write into an existing file rather than delete-then-create, so there is
+                    // never a moment with no file (and no duplicate names on Drive).
+                    val existing = folder.find(fileName).firstOrNull()
+                    if (existing != null) folder.overwrite(existing, csv) else folder.create(fileName, csv)
+                    existing != null
+                }
+                val what = "${pluralize(readings.size, "reading")}, ${pluralize(notes.size, "note")}"
+                message.value = if (replaced) "Exported $what, replacing the old $fileName" else "Exported $what"
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 message.value = "Export failed: ${e.message}"
             }
         }
     }
 
-    fun importCsv(storageHost: StorageHost) {
+    /**
+     * Restores readings and notes from a CSV file. Adds only rows that aren't already here, so it
+     * never reverts a later edit; rows deleted here since the file was written come back, since
+     * bringing them back is the point of importing an older file.
+     */
+    fun importCsv(uri: Uri) {
         viewModelScope.launch {
-            val uri = storageHost.openDocument() ?: return@launch
             try {
-                val text = app.contentResolver.openInputStream(uri)?.use { it.reader().readText() }
-                    ?: error("Could not read the chosen file")
-                val parsed = Csv.parse(text)
+                val parsed = withContext(Dispatchers.IO) {
+                    val text = app.contentResolver.openInputStream(uri)?.use { it.reader(Charsets.UTF_8).readText() }
+                        ?: error("Could not read the chosen file")
+                    Csv.parse(text)
+                }
                 if (parsed.readings.isEmpty() && parsed.notes.isEmpty()) {
                     message.value = "No readings or notes found in that file"
                     return@launch
                 }
-                dao.insertAll(parsed.readings)
-                dao.clearTombstones(parsed.readings.map { it.id })
-                noteDao.insertAll(parsed.notes)
-                noteDao.clearTombstones(parsed.notes.map { it.id })
-                BackupSyncWorker.enqueue(app)
-                LastReadingWidgetProvider.refresh(app)
-                message.value = "Imported ${pluralize(parsed.readings.size, "reading")}, ${pluralize(parsed.notes.size, "note")}"
+                val (newReadings, newNotes) = app.database.withTransaction {
+                    val readingPlan = planMerge(dao.getAll(), parsed.readings, emptySet()) { it.id }
+                    val notePlan = planMerge(noteDao.getAll(), parsed.notes, emptySet()) { it.id }
+                    dao.insertAllIfAbsent(readingPlan.toInsert)
+                    dao.clearTombstonesChunked(readingPlan.toInsert.map { it.id })
+                    noteDao.insertAllIfAbsent(notePlan.toInsert)
+                    noteDao.clearTombstonesChunked(notePlan.toInsert.map { it.id })
+                    readingPlan.toInsert.size to notePlan.toInsert.size
+                }
+                if (newReadings + newNotes > 0) {
+                    BackupSyncWorker.enqueue(app)
+                    LastReadingWidgetProvider.refresh(app)
+                }
+                message.value = importMessage(
+                    newReadings, newNotes,
+                    alreadyHere = parsed.readings.size + parsed.notes.size - newReadings - newNotes,
+                    unreadable = parsed.skippedRows
+                )
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 message.value = "Import failed: ${e.message}"
             }
         }
     }
 
-    fun chooseFolder(storageHost: StorageHost) {
+    /** Makes [uri] (just picked in the system folder picker) the backup folder and syncs to it. */
+    fun setBackupFolder(uri: Uri) {
         viewModelScope.launch {
-            val uri = storageHost.pickFolder() ?: return@launch
-            app.backupFolderStore.set(uri)
-            folderName.value = app.backupFolderStore.displayName()
+            try {
+                withContext(Dispatchers.IO) {
+                    store.set(uri)
+                    store.displayName()
+                }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                message.value = "Couldn't use that folder: ${e.message}"
+                return@launch
+            }
             syncNow()
         }
     }
 
     fun syncNow() {
-        if (syncStatus.value == SyncStatus.SYNCING) return
+        if (syncing.value) return
+        syncing.value = true
         viewModelScope.launch {
-            syncStatus.value = SyncStatus.SYNCING
-            syncError.value = null
             try {
                 val result = app.backupSyncManager.sync()
-                lastSyncedAt.value = result.syncedAt
-                syncStatus.value = SyncStatus.IDLE
+                result.preservedCopy?.let { message.value = unreadableRowsNotice(it) }
             } catch (e: NoBackupFolderSelectedException) {
-                syncStatus.value = SyncStatus.IDLE
+                // Nothing to sync to yet.
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
-                syncError.value = e.message ?: "Sync failed"
-                syncStatus.value = SyncStatus.ERROR
+                // Persisted so the status line (and the Add reading banner, if it lasts) show it.
+                store.recordFailure(e.message ?: "Sync failed")
+            } finally {
+                syncing.value = false
             }
         }
     }
-
 }
 
 private fun pluralize(count: Int, noun: String): String = "$count $noun${if (count == 1) "" else "s"}"
+
+internal fun importMessage(newReadings: Int, newNotes: Int, alreadyHere: Int, unreadable: Int): String {
+    val main = if (newReadings + newNotes == 0) {
+        "Nothing new to import — everything in that file is already here"
+    } else {
+        "Imported ${pluralize(newReadings, "reading")}, ${pluralize(newNotes, "note")}" +
+            if (alreadyHere > 0) " ($alreadyHere already here)" else ""
+    }
+    return main + if (unreadable > 0) ". ${pluralize(unreadable, "row")} couldn't be read" else ""
+}
 
 /** Most recent Check Up note's date, or null if none has ever been logged. */
 private fun lastCheckUpDate(notes: List<Note>): LocalDate? =
