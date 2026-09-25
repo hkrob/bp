@@ -76,6 +76,9 @@ import com.robcloud.bloodpressure.ui.showTimePicker
 import com.robcloud.bloodpressure.ui.theme.StatusHigh
 import com.robcloud.bloodpressure.ui.theme.StatusNormal
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.filter
+import kotlinx.coroutines.flow.map
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -97,16 +100,18 @@ fun CaptureScreen(
 
     // Flags are consumed before the snackbar shows: showSnackbar suspends until it is dismissed,
     // and leaving the tab meanwhile would otherwise replay the haptic and message on return.
-    LaunchedEffect(state.justSaved) {
-        if (state.justSaved) {
+    // Collected in Unit-keyed effects — an effect keyed on the flag would be cancelled, snackbar
+    // and all, by the recomposition that consuming the flag triggers.
+    LaunchedEffect(Unit) {
+        viewModel.uiState.map { it.justSaved }.distinctUntilChanged().filter { it }.collect {
             viewModel.consumeSavedFlag()
             haptics.performHapticFeedback(HapticFeedbackType.LongPress)
             snackbarHostState.showSnackbar("Reading saved")
         }
     }
 
-    LaunchedEffect(state.medicationSaved) {
-        if (state.medicationSaved) {
+    LaunchedEffect(Unit) {
+        viewModel.uiState.map { it.medicationSaved }.distinctUntilChanged().filter { it }.collect {
             viewModel.consumeMedicationSavedFlag()
             haptics.performHapticFeedback(HapticFeedbackType.LongPress)
             snackbarHostState.showSnackbar("Medication taken noted")

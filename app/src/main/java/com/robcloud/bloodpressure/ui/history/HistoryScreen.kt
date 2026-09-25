@@ -42,13 +42,13 @@ import com.robcloud.bloodpressure.data.Reading
 import com.robcloud.bloodpressure.ui.EqualWidthSegmentedRow
 import com.robcloud.bloodpressure.ui.Formatters
 import com.robcloud.bloodpressure.ui.theme.StatusElevated
+import kotlinx.coroutines.flow.filterNotNull
 import kotlin.math.roundToInt
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun HistoryScreen(viewModel: HistoryViewModel = viewModel()) {
     val state by viewModel.uiState.collectAsState()
-    val message by viewModel.message.collectAsState()
     val pendingReportShare by viewModel.pendingReportShare.collectAsState()
     val snackbarHostState = remember { SnackbarHostState() }
     val context = LocalContext.current
@@ -65,12 +65,15 @@ fun HistoryScreen(viewModel: HistoryViewModel = viewModel()) {
     }
     val pickBackupFolder = { backupFolderLauncher.launch(null) }
 
-    LaunchedEffect(message) {
-        val text = message ?: return@LaunchedEffect
-        // Consume before showing: the snackbar suspends until dismissed, and leaving the tab
-        // meanwhile would otherwise replay the message on the next visit.
-        viewModel.consumeMessage()
-        snackbarHostState.showSnackbar(text)
+    // Consume before showing: the snackbar suspends until dismissed, and leaving the tab
+    // meanwhile would otherwise replay the message on the next visit. Collected in one
+    // Unit-keyed effect — an effect keyed on the message would be cancelled (snackbar and
+    // all) by the very recomposition that consuming it triggers.
+    LaunchedEffect(Unit) {
+        viewModel.message.filterNotNull().collect { text ->
+            viewModel.consumeMessage()
+            snackbarHostState.showSnackbar(text)
+        }
     }
 
     LaunchedEffect(pendingReportShare) {

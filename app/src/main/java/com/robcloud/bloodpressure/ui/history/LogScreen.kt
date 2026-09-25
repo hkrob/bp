@@ -41,6 +41,7 @@ import com.robcloud.bloodpressure.data.NoteType
 import com.robcloud.bloodpressure.data.Reading
 import com.robcloud.bloodpressure.ui.EqualWidthSegmentedRow
 import com.robcloud.bloodpressure.ui.notes.EditNoteDialog
+import kotlinx.coroutines.flow.filterNotNull
 import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
@@ -69,15 +70,16 @@ private sealed class LogEntry(val sortInstant: Instant) {
 @Composable
 fun LogScreen(viewModel: HistoryViewModel = viewModel()) {
     val state by viewModel.uiState.collectAsState()
-    val message by viewModel.message.collectAsState()
     val snackbarHostState = remember { SnackbarHostState() }
 
     // Deletes made here report through the shared ViewModel; show them here rather than
-    // leaving them to pop up later on the History tab.
-    LaunchedEffect(message) {
-        val text = message ?: return@LaunchedEffect
-        viewModel.consumeMessage()
-        snackbarHostState.showSnackbar(text)
+    // leaving them to pop up later on the History tab. Same pattern as HistoryScreen: a
+    // Unit-keyed collector, so consuming the message doesn't cancel its own snackbar.
+    LaunchedEffect(Unit) {
+        viewModel.message.filterNotNull().collect { text ->
+            viewModel.consumeMessage()
+            snackbarHostState.showSnackbar(text)
+        }
     }
     var editingReading by remember { mutableStateOf<Reading?>(null) }
     var editingNote by remember { mutableStateOf<Note?>(null) }

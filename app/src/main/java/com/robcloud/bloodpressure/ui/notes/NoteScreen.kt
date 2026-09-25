@@ -50,6 +50,9 @@ import com.robcloud.bloodpressure.data.NOTE_DETAILS_MAX_LENGTH
 import com.robcloud.bloodpressure.data.NoteType
 import com.robcloud.bloodpressure.ui.showDatePickerFor
 import com.robcloud.bloodpressure.ui.showTimePickerFor
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.filter
+import kotlinx.coroutines.flow.map
 import java.time.LocalTime
 import java.time.format.DateTimeFormatter
 import java.time.format.FormatStyle
@@ -65,8 +68,9 @@ fun NoteScreen(viewModel: NoteViewModel = viewModel()) {
     val snackbarHostState = remember { SnackbarHostState() }
     var typeMenuExpanded by remember { mutableStateOf(false) }
 
-    LaunchedEffect(state.justSaved) {
-        if (state.justSaved) {
+    // Unit-keyed collector, as in CaptureScreen: consuming the flag mustn't cancel the snackbar.
+    LaunchedEffect(Unit) {
+        viewModel.uiState.map { it.justSaved }.distinctUntilChanged().filter { it }.collect {
             viewModel.consumeSavedFlag()
             snackbarHostState.showSnackbar("Note saved")
         }
