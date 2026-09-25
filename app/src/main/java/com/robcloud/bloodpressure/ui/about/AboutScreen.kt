@@ -58,6 +58,9 @@ private const val FEEDBACK_EMAIL = "android.bp@robcloud.qzz.io"
 
 /** Newest first; keep the three most recent versions here (older entries drop off). */
 private val CHANGELOG = listOf(
+    "2.6.1" to listOf(
+        "Confirmation messages are back: \"Reading saved\", \"Note saved\", \"Reading deleted\", and the results of Import and Export (including any errors) were being cleared before they could appear in 2.6.0."
+    ),
     "2.6.0" to listOf(
         "Safer backups: a sync can no longer undo an edit or bring back a deleted reading, rows the app can't read are never overwritten, a readings.csv written by another app is left alone, and a dated copy of the backup file is kept each day.",
         "You can now change the backup folder, and after moving to a new phone the app asks you to re-link it instead of failing silently. Backups that keep failing now show a warning on Add reading.",
@@ -70,9 +73,6 @@ private val CHANGELOG = listOf(
     ),
     "2.5.11" to listOf(
         "Last reading card: the date/time no longer wraps awkwardly across the reading — it now sits on its own tidy line at the bottom."
-    ),
-    "2.5.10" to listOf(
-        "Backup section on the About tab now names the storage provider (Google Drive, Dropbox, OneDrive, Box, or \"this device's local storage\") instead of just the folder name, so it's always clear where your data actually is."
     ),
 )
 
