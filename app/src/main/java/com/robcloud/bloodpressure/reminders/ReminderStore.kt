@@ -7,6 +7,7 @@ import java.util.UUID
 private const val PREFS_NAME = "reminder_prefs"
 private const val KEY_ENABLED = "enabled"
 private const val KEY_TIMES = "times"
+private const val KEY_ARMED_ZONE = "armed_zone"
 
 data class ReminderTime(
     val id: String = UUID.randomUUID().toString(),
@@ -29,6 +30,13 @@ class ReminderStore(context: Context) {
             putBoolean(KEY_ENABLED, settings.enabled)
             putString(KEY_TIMES, encodeTimes(settings.times))
         }
+    }
+
+    /** Zone id the armed reminder jobs were computed in; null before any were armed (or pre-2.7). */
+    fun armedZone(): String? = prefs.getString(KEY_ARMED_ZONE, null)
+
+    fun setArmedZone(zoneId: String) {
+        prefs.edit { putString(KEY_ARMED_ZONE, zoneId) }
     }
 
     private fun encodeTimes(times: List<ReminderTime>): String =

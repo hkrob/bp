@@ -43,6 +43,38 @@ class CaptureStateTest {
     }
 
     @Test
+    fun `saving clears the irregular heartbeat flag`() {
+        assertFalse(CaptureUiState(irregularHeartbeat = true).afterSave(crisisBp = null, now = now).irregularHeartbeat)
+    }
+
+    @Test
+    fun `a half-typed entry and a picked time survive the process being killed`() {
+        val picked = now.minusSeconds(5400)
+        val typed = CaptureUiState(
+            systolic = "13", diastolic = "", heartRate = "", irregularHeartbeat = true,
+            arm = Arm.RIGHT, takenAt = picked, takenAtEdited = true
+        )
+        val saved = typed.toSavedEntry()
+        val restored = CaptureUiState(arm = Arm.RIGHT, takenAt = now).withSavedEntry { saved[it] }
+        assertEquals(typed, restored)
+    }
+
+    @Test
+    fun `a time that followed the clock is not restored`() {
+        val saved = CaptureUiState(systolic = "120", takenAt = now.minusSeconds(600)).toSavedEntry()
+        val restored = CaptureUiState(takenAt = now).withSavedEntry { saved[it] }
+        assertEquals("120", restored.systolic)
+        assertEquals(now, restored.takenAt)
+        assertFalse(restored.takenAtEdited)
+    }
+
+    @Test
+    fun `nothing saved leaves a fresh form`() {
+        val fresh = CaptureUiState(arm = Arm.RIGHT, takenAt = now)
+        assertEquals(fresh, fresh.withSavedEntry { null })
+    }
+
+    @Test
     fun `stored arm parses, defaulting to left`() {
         assertEquals(Arm.RIGHT, parseStoredArm("RIGHT"))
         assertEquals(Arm.LEFT, parseStoredArm("LEFT"))

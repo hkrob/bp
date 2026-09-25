@@ -25,4 +25,19 @@ class BpCategoryTest {
         // Elevated systolic but stage-2 diastolic must classify as stage 2.
         assertEquals(BpCategory.STAGE_2, BpCategory.of(125, 95))
     }
+
+    @Test
+    fun `low boundaries`() {
+        assertEquals(BpCategory.LOW, BpCategory.of(89, 70))
+        assertEquals(BpCategory.LOW, BpCategory.of(100, 59))
+        assertEquals(BpCategory.LOW, BpCategory.of(85, 55))
+        assertEquals(BpCategory.NORMAL, BpCategory.of(90, 60))
+    }
+
+    @Test
+    fun `a raised number outranks a low one`() {
+        assertEquals(BpCategory.STAGE_2, BpCategory.of(85, 95))
+        assertEquals(BpCategory.ELEVATED, BpCategory.of(125, 55))
+        assertEquals(BpCategory.STAGE_1, BpCategory.of(88, 82))
+    }
 }

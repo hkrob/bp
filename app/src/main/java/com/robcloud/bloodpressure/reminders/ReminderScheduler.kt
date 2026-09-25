@@ -29,6 +29,12 @@ fun nextOccurrence(now: ZonedDateTime, hour: Int, minute: Int): ZonedDateTime {
 }
 
 /**
+ * True when armed jobs were computed in a different zone (or before the zone was recorded), so
+ * their delays point at the wrong local time and must all be rebuilt.
+ */
+internal fun needsRealign(armedZoneId: String?, currentZoneId: String): Boolean = armedZoneId != currentZoneId
+
+/**
  * Schedules one local notification per reminder time via WorkManager. Not wall-clock exact (no
  * SCHEDULE_EXACT_ALARM permission needed), but close enough for a habit reminder.
  *
@@ -44,11 +50,13 @@ object ReminderScheduler {
         cancel(context)
         val now = ZonedDateTime.now()
         times.forEach { enqueueNext(workManager, it, now) }
+        ReminderStore(context).setArmedZone(now.zone.id)
     }
 
     /**
-     * Arms the next occurrence of each enabled reminder without disturbing ones already armed.
-     * Safe to call on every app start; also clears jobs from the old periodic scheme.
+     * Arms the next occurrence of each enabled reminder. Safe to call on every app start; also
+     * clears jobs from the old periodic scheme. Jobs already armed are kept — unless they were
+     * computed in another time zone, in which case every job is rebuilt (see [realign]).
      */
     fun ensureScheduled(context: Context, settings: ReminderSettings) {
         val workManager = WorkManager.getInstance(context)
@@ -60,7 +68,20 @@ object ReminderScheduler {
         workManager.cancelUniqueWork(LEGACY_WORK_NAME)
         settings.times.forEach { workManager.cancelUniqueWork(WORK_NAME_PREFIX + it.id) }
         val now = ZonedDateTime.now()
+        if (needsRealign(ReminderStore(context).armedZone(), now.zone.id)) {
+            schedule(context, settings.times)
+            return
+        }
         settings.times.forEach { enqueueNext(workManager, it, now) }
+    }
+
+    /**
+     * Rebuilds every reminder job for the phone's current zone and clock. An armed job is only a
+     * delay, so after a time-zone or clock change it would fire at the old zone's wall-clock time
+     * (8:00 in Hong Kong is 10:00 in Sydney). Called by [TimeChangeReceiver].
+     */
+    fun realign(context: Context, settings: ReminderSettings) {
+        if (settings.enabled) schedule(context, settings.times) else cancel(context)
     }
 
     /** Called by [ReminderWorker] once it has shown today's notification. */

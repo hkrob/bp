@@ -56,6 +56,13 @@ interface ReadingDao {
         insertTombstone(DeletedReading(id))
     }
 
+    /** Undoes [deleteWithTombstone]: the row comes back and sync stops treating it as deleted. */
+    @Transaction
+    suspend fun restore(reading: Reading) {
+        insert(reading)
+        clearTombstones(listOf(reading.id))
+    }
+
     @Query("SELECT id FROM deleted_readings")
     suspend fun getTombstoneIds(): List<String>
 

@@ -168,6 +168,37 @@ class CsvTest {
     }
 
     @Test
+    fun `irregular heartbeat flag round trips`() {
+        val flagged = reading(id = "f").copy(irregularHeartbeat = true)
+        val plain = reading(id = "p")
+        val parsed = Csv.parse(Csv.write(listOf(flagged, plain), listOf(note())))
+        assertEquals(setOf(flagged, plain), parsed.readings.toSet())
+        assertEquals(0, parsed.skippedRows)
+    }
+
+    @Test
+    fun `a file written before the irregular heartbeat column reads cleanly`() {
+        // Exactly what 2.4–2.6 wrote: nine columns, no irregular_heartbeat.
+        val v2 = "record_type,id,date,systolic_mmhg,diastolic_mmhg,heart_rate_bpm,arm,note_type,note_details\n" +
+            "READING,r1,2026-07-18T08:41:00Z,120,80,70,LEFT,,\n" +
+            "NOTE,n1,2026-07-18T00:01,,,,,MEDICATION_CHANGED,plain details\n"
+        val parsed = Csv.parse(v2)
+        assertEquals(listOf(reading()), parsed.readings)
+        assertEquals(listOf(note()), parsed.notes)
+        assertEquals(0, parsed.skippedRows)
+        assertTrue(Csv.isBackupFile(v2))
+    }
+
+    @Test
+    fun `an unexpected irregular heartbeat value fails only that row`() {
+        val written = Csv.write(listOf(reading()), emptyList()) +
+            "READING,r2,2026-07-18T09:00:00Z,120,80,70,LEFT,,,maybe\n"
+        val parsed = Csv.parse(written)
+        assertEquals(1, parsed.readings.size)
+        assertEquals(1, parsed.skippedRows)
+    }
+
+    @Test
     fun `carriage return at the start of details is guarded and round trips`() {
         val payload = "\rstarts with CR"
         val parsed = Csv.parse(Csv.write(emptyList(), listOf(note(details = payload))))

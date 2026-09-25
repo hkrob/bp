@@ -48,4 +48,26 @@ class ReminderTimingTest {
         val next = nextOccurrence(at("2026-10-03T23:00"), 2, 30)
         assertEquals(ZonedDateTime.of(2026, 10, 4, 3, 30, 0, 0, sydney), next)
     }
+
+    @Test
+    fun `a delay armed in one zone lands at the wrong local time in another, so it is rebuilt`() {
+        val hongKong = ZoneId.of("Asia/Hong_Kong")
+        // Armed at 21:00 in Hong Kong for 08:00 tomorrow: an 11-hour delay.
+        val armedAt = at("2026-09-25T21:00", hongKong)
+        val armedTarget = nextOccurrence(armedAt, 8, 0)
+        // The phone then moves to Sydney (UTC+10 until DST starts on 4 October).
+        val firesAt = armedTarget.withZoneSameInstant(sydney)
+        assertEquals(LocalDateTime.parse("2026-09-26T10:00"), firesAt.toLocalDateTime())
+        // Rebuilt from the same instant in the new zone, it is 08:00 local again.
+        val rebuilt = nextOccurrence(armedAt.withZoneSameInstant(sydney), 8, 0)
+        assertEquals(at("2026-09-26T08:00"), rebuilt)
+        assertEquals(Duration.ofHours(9), Duration.between(armedAt, rebuilt))
+    }
+
+    @Test
+    fun `reminders are rebuilt when the zone differs or was never recorded`() {
+        assertEquals(false, needsRealign("Asia/Hong_Kong", "Asia/Hong_Kong"))
+        assertEquals(true, needsRealign("Asia/Hong_Kong", "Australia/Sydney"))
+        assertEquals(true, needsRealign(null, "Asia/Hong_Kong"))
+    }
 }

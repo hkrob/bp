@@ -56,6 +56,17 @@
                 android:resource="@xml/bp_widget_info" />
         </receiver>
 
+        <!-- Rebuilds reminder jobs when the time zone or clock changes, so they stay at the
+             chosen local time (see reminders/TimeChangeReceiver.kt). Only the system sends these. -->
+        <receiver
+            android:name=".reminders.TimeChangeReceiver"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="android.intent.action.TIMEZONE_CHANGED" />
+                <action android:name="android.intent.action.TIME_SET" />
+            </intent-filter>
+        </receiver>
+
     </application>
 
 </manifest>

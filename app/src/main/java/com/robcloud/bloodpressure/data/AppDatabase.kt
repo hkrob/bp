@@ -11,7 +11,7 @@ import java.io.File
 import java.time.Instant
 
 const val DB_NAME = "bp-tracker.db"
-const val DB_VERSION = 5
+const val DB_VERSION = 6
 
 /**
  * Adds the notes/deleted_notes tables without touching readings/deleted_readings, so an
@@ -37,6 +37,16 @@ private val MIGRATION_3_4 = object : Migration(3, 4) {
 private val MIGRATION_4_5 = object : Migration(4, 5) {
     override fun migrate(db: SupportSQLiteDatabase) {
         db.execSQL("ALTER TABLE `notes` ADD COLUMN `time` TEXT NOT NULL DEFAULT '00:01'")
+    }
+}
+
+/**
+ * Adds the irregular-heartbeat flag to readings. Existing readings default to 0 (not flagged),
+ * matching the entity's @ColumnInfo(defaultValue).
+ */
+private val MIGRATION_5_6 = object : Migration(5, 6) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        db.execSQL("ALTER TABLE `readings` ADD COLUMN `irregularHeartbeat` INTEGER NOT NULL DEFAULT 0")
     }
 }
 
@@ -72,7 +82,7 @@ abstract class AppDatabase : RoomDatabase() {
                 )
             }
             return Room.databaseBuilder(context, AppDatabase::class.java, DB_NAME)
-                .addMigrations(MIGRATION_3_4, MIGRATION_4_5)
+                .addMigrations(MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6)
                 // Only the pre-v3 schemas, which never had a migration path, may be dropped.
                 // Any other missing migration now fails loudly at open instead of silently
                 // wiping the reading history: a crash is fixed by shipping the migration and

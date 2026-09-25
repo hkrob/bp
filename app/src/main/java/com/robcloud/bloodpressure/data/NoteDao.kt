@@ -38,6 +38,13 @@ interface NoteDao {
         insertTombstone(DeletedNote(id))
     }
 
+    /** See [ReadingDao.restore]. */
+    @Transaction
+    suspend fun restore(note: Note) {
+        insert(note)
+        clearTombstones(listOf(note.id))
+    }
+
     @Query("SELECT id FROM deleted_notes")
     suspend fun getTombstoneIds(): List<String>
 

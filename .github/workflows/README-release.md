@@ -66,6 +66,9 @@ release already exists and finishes as a no-op.
   as a no-op rather than failing.)
 - Publish when a pushed tag disagrees with `versionName`, or an existing tag points at a
   different commit than the one being built.
+- Publish when `versionCode` is not higher than the latest published release's (read from that
+  release's tag). Android won't install an update whose versionCode didn't go up. Dry runs check
+  this too.
 - Publish a commit that is not on `main`.
 - Publish when there is no changelog entry for the version.
 - Publish when tests or the Paparazzi snapshots fail (diffs are uploaded as an artifact).

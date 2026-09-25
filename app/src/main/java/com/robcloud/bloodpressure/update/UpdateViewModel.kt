@@ -9,6 +9,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import java.io.File
+import java.io.IOException
 
 sealed interface UpdateUiState {
     data object Idle : UpdateUiState
@@ -54,7 +55,7 @@ class UpdateViewModel(application: Application) : AndroidViewModel(application) 
                 val latest = UpdateManager.checkLatest()
                 when {
                     latest == null -> {
-                        _state.value = UpdateUiState.Error("Couldn't reach GitHub, or the latest release has no APK")
+                        _state.value = UpdateUiState.Error("The latest release on GitHub has no APK to install")
                     }
                     UpdateManager.isNewer(latest.versionName, BuildConfig.VERSION_NAME) -> {
                         store.saveLatestRelease(latest)
@@ -67,6 +68,10 @@ class UpdateViewModel(application: Application) : AndroidViewModel(application) 
                         _state.value = UpdateUiState.UpToDate
                     }
                 }
+            } catch (e: UpdateCheckException) {
+                _state.value = UpdateUiState.Error(e.message ?: "Update check failed")
+            } catch (e: IOException) {
+                _state.value = UpdateUiState.Error("Couldn't reach GitHub. Check your internet connection and try again.")
             } catch (e: Exception) {
                 _state.value = UpdateUiState.Error(e.message ?: "Update check failed")
             }

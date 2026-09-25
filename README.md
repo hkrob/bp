@@ -11,7 +11,7 @@ Access Framework — no account sign-in inside the app.
 | Add reading | History | Log | About | Console theme |
 |:---:|:---:|:---:|:---:|:---:|
 | <img src="screenshots/01-add-reading.png" width="170" alt="Add reading tab"> | <img src="screenshots/02-history.png" width="170" alt="History tab with trend chart"> | <img src="screenshots/03-log.png" width="170" alt="Log tab"> | <img src="screenshots/04-about.png" width="170" alt="About tab with update check"> | <img src="screenshots/05-console-theme.png" width="170" alt="Console theme"> |
-| Last reading with AHA category and trend | Averages, trend chart with note markers | Readings and notes in one time-ordered list | Version, changelog and in-app update check | One of four themes |
+| Entry form with irregular-heartbeat flag | Averages, morning/evening split and trend chart | Readings and notes in one time-ordered list | Backup status and in-app update check | Readings grouped into sittings |
 
 *Screenshots use demo data, not real readings.*
 
@@ -20,14 +20,18 @@ Access Framework — no account sign-in inside the app.
 - Capture readings (systolic/diastolic/heart rate/arm/date-time) with AHA category
   classification and a trend against the previous reading. The arm you last used is remembered,
   a back-dated date/time is kept until you save, and future times are rejected. A reading in the
-  hypertensive-crisis range shows an advisory.
+  hypertensive-crisis range shows an advisory. Readings under 90 systolic or 60 diastolic are
+  marked Low, and you can record that the monitor flagged an irregular heartbeat. A half-entered
+  reading or note survives Android closing the app in the background.
 - Notes (medication changes, check-ups, samples) alongside readings, plus one-tap
   "Medication taken" notes that record the time the dose was taken.
-- History with period filters (month, quarter, year, since last check-up, all time), averages,
-  a trend chart, and note markers on the systolic line.
-- Dense text log of readings and notes with arm filters and edit/delete.
+- History with period filters (month, quarter, year, since last check-up, all time), averages
+  (overall, and mornings vs afternoons & evenings), and a trend chart. Readings taken within
+  10 minutes of each other are grouped into a sitting with its own average.
+- Dense text log of readings and notes with arm filters and edit/delete. A delete can be undone
+  from its confirmation message.
 - Daily reminders at one or more times, kept at the same local time across daylight-saving
-  changes. The app warns you when notifications are blocked.
+  changes, time-zone changes and clock changes. The app warns you when notifications are blocked.
 - Automatic CSV backup to a folder you choose, with daily snapshots (see below).
 - CSV import/export and a shareable PDF "doctor's report".
 - Home-screen widget showing the last reading.
@@ -37,7 +41,9 @@ Access Framework — no account sign-in inside the app.
 
 - **What is backed up.** After every change, and once a day, the app writes every reading and
   note to `readings.csv` in the folder you picked (History tab → **Set backup**). The file is
-  plain CSV, so any spreadsheet can open it.
+  plain CSV, so any spreadsheet can open it. Since 2.7.0 it has an `irregular_heartbeat`
+  column; 2.7.0 still reads the older files, but older versions of the app refuse the new one,
+  so update every phone that shares a backup folder.
 - **How syncing merges.** A sync adds readings the file has but the phone doesn't. The phone's
   own copies always win, and deletions are remembered so a deleted reading isn't brought back
   from the file.

@@ -22,6 +22,8 @@ val SurfaceDark = Color(0xFF17201D)
 val StatusNormal = Color(0xFF2E7D32)
 val StatusElevated = Color(0xFFF9A825)
 val StatusHigh = Color(0xFFD32F2F)
+// Blue rather than green or red: a low reading is worth noticing but isn't "high".
+val StatusLow = Color(0xFF2F80ED)
 
 // Chart series colors.
 val ChartSystolic = Color(0xFF00695C)

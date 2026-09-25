@@ -58,6 +58,17 @@ private const val FEEDBACK_EMAIL = "android.bp@robcloud.qzz.io"
 
 /** Newest first; keep the three most recent versions here (older entries drop off). */
 private val CHANGELOG = listOf(
+    "2.7.0" to listOf(
+        "Low readings (under 90 systolic or under 60 diastolic) are now marked \"Low\", in blue.",
+        "Readings taken within 10 minutes of each other are grouped as a sitting, with the sitting's average shown in History and counted in the PDF report.",
+        "History and the PDF report show separate averages for mornings (before 12:00) and afternoons & evenings.",
+        "You can record that the monitor showed an irregular heartbeat. Flagged readings are marked IRR in History, the Log and the PDF report, and the flag is kept in the backup file.",
+        "Daily reminders follow the phone's time zone: after travelling, or changing the clock, they come at the chosen local time straight away instead of a day later.",
+        "Deleting a reading or note can now be undone from the message that confirms it.",
+        "A reading or note you are part way through entering is kept if Android closes the app in the background.",
+        "The update check now says when GitHub's hourly limit has been reached, and how long to wait, instead of \"Couldn't reach GitHub\".",
+        "The backup file gains an irregular_heartbeat column. Older versions of the app will refuse to sync with it (nothing is lost), so update the app on every phone that uses the same backup folder."
+    ),
     "2.6.1" to listOf(
         "Confirmation messages are back: \"Reading saved\", \"Note saved\", \"Reading deleted\", and the results of Import and Export (including any errors) were being cleared before they could appear in 2.6.0."
     ),
@@ -70,9 +81,6 @@ private val CHANGELOG = listOf(
         "Import only adds readings and notes that are missing, so it no longer reverts later edits, and large files now import on Android 8-11.",
         "History scrolls as one page, so the readings list no longer vanishes in landscape, and older readings show their year.",
         "Fixes to the PDF report (note markers, medication times, long notes), Log column alignment, 24-hour time pickers and status bar icons in Dark and Console themes."
-    ),
-    "2.5.11" to listOf(
-        "Last reading card: the date/time no longer wraps awkwardly across the reading — it now sits on its own tidy line at the bottom."
     ),
 )
 

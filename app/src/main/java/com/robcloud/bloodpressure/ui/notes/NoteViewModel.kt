@@ -2,6 +2,7 @@ package com.robcloud.bloodpressure.ui.notes
 
 import android.app.Application
 import androidx.lifecycle.AndroidViewModel
+import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.viewModelScope
 import com.robcloud.bloodpressure.BloodPressureApp
 import com.robcloud.bloodpressure.backup.BackupSyncWorker
@@ -44,11 +45,43 @@ internal fun NoteUiState.noteTime(now: LocalTime): LocalTime = when {
     else -> now
 }
 
-class NoteViewModel(application: Application) : AndroidViewModel(application) {
+private const val KEY_DATE = "date_epoch_day"
+private const val KEY_TIME = "time_second_of_day"
+private const val KEY_TYPE = "note_type"
+private const val KEY_DETAILS = "details"
+
+/**
+ * The half-written note, as plain values for [SavedStateHandle], so it survives Android killing
+ * the app in the background. A date or time that wasn't picked isn't saved: it follows the clock.
+ */
+internal fun NoteUiState.toSavedEntry(): Map<String, Any?> = mapOf(
+    KEY_DATE to if (dateEdited) date.toEpochDay() else null,
+    KEY_TIME to if (timeEdited) time.toSecondOfDay() else null,
+    KEY_TYPE to noteType.name,
+    KEY_DETAILS to details
+)
+
+internal fun NoteUiState.withSavedEntry(saved: (String) -> Any?): NoteUiState {
+    val pickedDate = (saved(KEY_DATE) as? Long)?.let(LocalDate::ofEpochDay)
+    val pickedTime = (saved(KEY_TIME) as? Int)?.let { LocalTime.ofSecondOfDay(it.toLong()) }
+    return copy(
+        date = pickedDate ?: date,
+        dateEdited = pickedDate != null || dateEdited,
+        time = pickedTime ?: time,
+        timeEdited = pickedTime != null || timeEdited,
+        noteType = NoteType.entries.firstOrNull { it.name == saved(KEY_TYPE) } ?: noteType,
+        details = saved(KEY_DETAILS) as? String ?: details
+    )
+}
+
+class NoteViewModel(
+    application: Application,
+    private val savedState: SavedStateHandle
+) : AndroidViewModel(application) {
     private val app = application as BloodPressureApp
     private val noteDao = app.database.noteDao()
 
-    private val _uiState = MutableStateFlow(NoteUiState())
+    private val _uiState = MutableStateFlow(NoteUiState().withSavedEntry { savedState[it] })
     val uiState: StateFlow<NoteUiState> = _uiState.asStateFlow()
 
     private var saving = false
@@ -92,7 +125,7 @@ class NoteViewModel(application: Application) : AndroidViewModel(application) {
             try {
                 noteDao.insert(Note(date = date, noteType = state.noteType, details = details, time = time))
                 BackupSyncWorker.enqueue(app)
-                _uiState.value = NoteUiState(justSaved = true)
+                update { NoteUiState(justSaved = true) }
             } finally {
                 saving = false
             }
@@ -102,6 +135,8 @@ class NoteViewModel(application: Application) : AndroidViewModel(application) {
     fun consumeSavedFlag() = update { it.copy(justSaved = false) }
 
     private fun update(transform: (NoteUiState) -> NoteUiState) {
-        _uiState.value = transform(_uiState.value)
+        val next = transform(_uiState.value)
+        _uiState.value = next
+        next.toSavedEntry().forEach { (key, value) -> savedState[key] = value }
     }
 }

@@ -101,6 +101,34 @@ jobs:
           fi
           echo "skip=false" >> "$GITHUB_OUTPUT"
 
+      - name: Check versionCode went up since the latest release
+        if: steps.existing.outputs.skip != 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          # Android refuses to install an update whose versionCode isn't higher than the installed
+          # one, so an APK that forgot the bump would be published but uninstallable as an update.
+          if ! PREV=$(gh release view --repo "$GITHUB_REPOSITORY" --json tagName --jq .tagName 2>/dev/null); then
+            echo "::notice::No earlier release found — nothing to compare versionCode against."
+            exit 0
+          fi
+          if ! PREV_GRADLE=$(git show "refs/tags/${PREV}:app/build.gradle.kts" 2>/dev/null); then
+            echo "::error::Latest release $PREV has no tag in this checkout, so its versionCode can't be checked."
+            exit 1
+          fi
+          PREV_CODE=$(printf '%s\n' "$PREV_GRADLE" | grep -oP 'versionCode\s*=\s*\K\d+' | head -1)
+          CODE="${{ steps.version.outputs.code }}"
+          if [ -z "$PREV_CODE" ]; then
+            echo "::error::Could not read versionCode from $PREV's app/build.gradle.kts."
+            exit 1
+          fi
+          if [ "$CODE" -le "$PREV_CODE" ]; then
+            echo "::error::versionCode $CODE is not higher than $PREV's ($PREV_CODE) — bump it, or Android won't install this as an update."
+            exit 1
+          fi
+          echo "versionCode $CODE > $PREV_CODE ($PREV)"
+
       - name: Only publish commits that are on main
         if: steps.existing.outputs.skip != 'true' && inputs.dry_run != true
         run: |

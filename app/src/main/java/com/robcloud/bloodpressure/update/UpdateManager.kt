@@ -11,6 +11,8 @@ import org.json.JSONObject
 import java.io.File
 import java.net.HttpURLConnection
 import java.net.URL
+import java.time.Duration
+import java.time.Instant
 
 /**
  * Where the app looks for updates. Each GitHub Release must be tagged with the version name
@@ -28,6 +30,30 @@ object UpdateConfig {
     val isConfigured: Boolean get() = OWNER != "OWNER" && REPO != "REPO"
 }
 
+/** GitHub answered, but not with a release; [message] is written for the user. */
+class UpdateCheckException(message: String) : Exception(message)
+
+/**
+ * Explains a non-200 answer from the releases API. Unauthenticated calls are limited to 60 an
+ * hour per IP address, shared by every device on the network, and GitHub reports running out as
+ * a 403 (or 429) with `X-RateLimit-Remaining: 0` and the reset time in `X-RateLimit-Reset`
+ * (epoch seconds).
+ */
+internal fun updateCheckFailureMessage(code: Int, rateLimitRemaining: String?, rateLimitReset: String?, now: Instant): String {
+    val limited = code == 429 || (code == 403 && rateLimitRemaining?.trim() == "0")
+    return when {
+        limited -> {
+            val reset = rateLimitReset?.trim()?.toLongOrNull()?.let(Instant::ofEpochSecond)
+            val wait = reset?.let { Duration.between(now, it) }
+            val minutes = wait?.let { ((it.seconds + 59) / 60).coerceAtLeast(1) }
+            "GitHub's hourly limit on update checks has been reached (it's shared by every device on " +
+                "your network). " + if (minutes != null) "Try again in about $minutes min." else "Try again later."
+        }
+        code == 404 -> "No published release was found on GitHub"
+        else -> "GitHub couldn't answer the update check (HTTP $code). Try again later."
+    }
+}
+
 data class ReleaseInfo(
     val versionName: String,
     val apkUrl: String,
@@ -42,7 +68,11 @@ data class ReleaseInfo(
 object UpdateManager {
     private const val TIMEOUT_MS = 15_000
 
-    /** Latest published release, or null if unreachable / no APK asset. Runs off the main thread. */
+    /**
+     * Latest published release, or null if it has no APK asset. Throws [UpdateCheckException] when
+     * GitHub answers with an error (including its rate limit), and an IOException when it can't be
+     * reached. Runs off the main thread.
+     */
     suspend fun checkLatest(): ReleaseInfo? = withContext(Dispatchers.IO) {
         val conn = (URL(UpdateConfig.latestReleaseApiUrl).openConnection() as HttpURLConnection).apply {
             requestMethod = "GET"
@@ -52,7 +82,17 @@ object UpdateManager {
             readTimeout = TIMEOUT_MS
         }
         try {
-            if (conn.responseCode != HttpURLConnection.HTTP_OK) return@withContext null
+            val code = conn.responseCode
+            if (code != HttpURLConnection.HTTP_OK) {
+                throw UpdateCheckException(
+                    updateCheckFailureMessage(
+                        code,
+                        conn.getHeaderField("X-RateLimit-Remaining"),
+                        conn.getHeaderField("X-RateLimit-Reset"),
+                        Instant.now()
+                    )
+                )
+            }
             val obj = JSONObject(conn.inputStream.bufferedReader().use { it.readText() })
             val versionName = obj.getString("tag_name").trim().removePrefix("v").removePrefix("V")
             // optString turns a JSON null into the text "null"; a release with no notes has body: null.
