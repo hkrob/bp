@@ -129,5 +129,48 @@ class CsvTest {
         val parsed = Csv.parse(written)
         assertEquals(1, parsed.readings.size)
         assertTrue(parsed.notes.isEmpty())
+        assertEquals(1, parsed.skippedRows)
+    }
+
+    @Test
+    fun `rows that could not be read are counted`() {
+        val written = Csv.write(listOf(reading()), listOf(note())) +
+            "READING,bad,not-a-date,x,y,z,NOPE,,\n" +
+            "NOTE,n2,2026-07-18,,,,,NOT_A_TYPE,x\n" +
+            "GARBAGE\n"
+        assertEquals(3, Csv.parse(written).skippedRows)
+    }
+
+    @Test
+    fun `a clean round trip skips nothing`() {
+        val written = Csv.write(listOf(reading()), listOf(note()))
+        assertEquals(0, Csv.parse(written).skippedRows)
+    }
+
+    @Test
+    fun `a byte-order mark before the header is ignored`() {
+        val bom = "\uFEFF"
+        val legacy = bom + "id,taken_at,systolic_mmhg,diastolic_mmhg,heart_rate_bpm,arm\n" +
+            "abc,2026-07-18T08:41:00Z,120,80,70,LEFT\n"
+        assertEquals(1, Csv.parse(legacy).readings.size)
+        assertEquals(1, Csv.parse(bom + Csv.write(listOf(reading()), emptyList())).readings.size)
+        assertTrue(Csv.isBackupFile(legacy))
+    }
+
+    @Test
+    fun `only this app's files count as backup files`() {
+        assertTrue(Csv.isBackupFile(""))
+        assertTrue(Csv.isBackupFile("\n\n"))
+        assertTrue(Csv.isBackupFile(Csv.write(emptyList(), emptyList())))
+        assertTrue(Csv.isBackupFile("id,taken_at,systolic_mmhg,diastolic_mmhg,heart_rate_bpm,arm\n"))
+        assertFalse(Csv.isBackupFile("date,glucose_mmol\n2026-07-18,5.4\n"))
+        assertFalse(Csv.isBackupFile("just some text"))
+    }
+
+    @Test
+    fun `carriage return at the start of details is guarded and round trips`() {
+        val payload = "\rstarts with CR"
+        val parsed = Csv.parse(Csv.write(emptyList(), listOf(note(details = payload))))
+        assertEquals(payload, parsed.notes.single().details)
     }
 }

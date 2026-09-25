@@ -35,6 +35,7 @@ import com.robcloud.bloodpressure.ui.Formatters
 import com.robcloud.bloodpressure.ui.showDatePicker
 import com.robcloud.bloodpressure.ui.showTimePicker
 import com.robcloud.bloodpressure.ui.validateReading
+import com.robcloud.bloodpressure.ui.validateTakenAt
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -155,7 +156,7 @@ fun EditReadingDialog(
                             val sys = systolic.toIntOrNull()
                             val dia = diastolic.toIntOrNull()
                             val hr = heartRate.toIntOrNull()
-                            val error = validateReading(sys, dia, hr)
+                            val error = validateReading(sys, dia, hr) ?: validateTakenAt(takenAt)
                             if (error != null) {
                                 errorMessage = error
                             } else {

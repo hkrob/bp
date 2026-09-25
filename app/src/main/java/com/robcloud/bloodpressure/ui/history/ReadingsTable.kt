@@ -34,10 +34,12 @@ fun readingStatusColor(reading: Reading) = categoryColor(reading.bpCategory())
 fun ReadingsTable(
     readings: List<Reading>,
     onRowClick: (Reading) -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    header: @Composable () -> Unit = {}
 ) {
     LazyColumn(modifier = modifier) {
-        item { TableHeaderRow() }
+        item(key = "summary") { header() }
+        item(key = "table-header") { TableHeaderRow() }
         items(readings, key = { it.id }) { reading ->
             TableRow(reading, onClick = { onRowClick(reading) })
             HorizontalDivider()
@@ -68,7 +70,7 @@ private fun TableRow(reading: Reading, onClick: () -> Unit) {
             .padding(horizontal = 12.dp, vertical = 10.dp)
     ) {
         Text(
-            Formatters.dateTimeNoYear(reading.takenAt),
+            Formatters.dateTimeCompact(reading.takenAt),
             modifier = Modifier.weight(1.6f),
             style = MaterialTheme.typography.bodyMedium,
             maxLines = 1

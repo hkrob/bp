@@ -50,6 +50,9 @@ import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.semantics.LiveRegionMode
+import androidx.compose.ui.semantics.liveRegion
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
@@ -72,6 +75,7 @@ import com.robcloud.bloodpressure.ui.showDatePicker
 import com.robcloud.bloodpressure.ui.showTimePicker
 import com.robcloud.bloodpressure.ui.theme.StatusHigh
 import com.robcloud.bloodpressure.ui.theme.StatusNormal
+import kotlinx.coroutines.delay
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -91,19 +95,21 @@ fun CaptureScreen(
     val diastolicFocus = remember { FocusRequester() }
     val heartRateFocus = remember { FocusRequester() }
 
+    // Flags are consumed before the snackbar shows: showSnackbar suspends until it is dismissed,
+    // and leaving the tab meanwhile would otherwise replay the haptic and message on return.
     LaunchedEffect(state.justSaved) {
         if (state.justSaved) {
+            viewModel.consumeSavedFlag()
             haptics.performHapticFeedback(HapticFeedbackType.LongPress)
             snackbarHostState.showSnackbar("Reading saved")
-            viewModel.consumeSavedFlag()
         }
     }
 
     LaunchedEffect(state.medicationSaved) {
         if (state.medicationSaved) {
+            viewModel.consumeMedicationSavedFlag()
             haptics.performHapticFeedback(HapticFeedbackType.LongPress)
             snackbarHostState.showSnackbar("Medication taken noted")
-            viewModel.consumeMedicationSavedFlag()
         }
     }
 
@@ -111,21 +117,30 @@ fun CaptureScreen(
         CrisisWarningDialog(bp = bp, onDismiss = viewModel::consumeCrisisWarning)
     }
 
-    // Stamp the form with the current date & time, and re-check the backup-folder status,
-    // whenever this screen comes to the foreground — on app launch/resume and on returning to
-    // this tab (adding the observer while already RESUMED replays ON_RESUME). The date/time
-    // pickers are plain Dialogs, which don't change the activity lifecycle, so a manually
-    // chosen date is never overwritten while the user stays on the screen.
+    // Move the form's time on to now, and re-check the backup status, whenever this screen comes
+    // to the foreground — on app launch/resume and on returning to this tab (adding the observer
+    // while already RESUMED replays ON_RESUME). A date or time the user picked is kept: they may
+    // be back-filling from a monitor's memory and only switched apps to read it.
     val lifecycleOwner = LocalLifecycleOwner.current
     DisposableEffect(lifecycleOwner) {
         val observer = LifecycleEventObserver { _, event ->
             if (event == Lifecycle.Event.ON_RESUME) {
-                viewModel.setTakenAtNow()
+                viewModel.refreshTakenAt()
                 viewModel.refreshBackupStatus()
             }
         }
         lifecycleOwner.lifecycle.addObserver(observer)
         onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
+
+    // Keep the displayed time current while the form follows the clock (saving stamps the
+    // actual moment anyway; this just stops the button showing a stale minute).
+    LaunchedEffect(state.takenAtEdited) {
+        if (state.takenAtEdited) return@LaunchedEffect
+        while (true) {
+            delay(60_000L - System.currentTimeMillis() % 60_000L)
+            viewModel.refreshTakenAt()
+        }
     }
 
     Column(Modifier.fillMaxSize()) {
@@ -236,7 +251,12 @@ fun CaptureScreen(
             }
 
             state.errorMessage?.let {
-                Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodyMedium)
+                Text(
+                    it,
+                    color = MaterialTheme.colorScheme.error,
+                    style = MaterialTheme.typography.bodyMedium,
+                    modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite }
+                )
             }
 
             Button(
@@ -263,16 +283,10 @@ fun CaptureScreen(
                 )
             }
 
-            // Backup-at-risk banner — no folder set, or the folder set is on-device only.
-            if (!backupBannerDismissed && (state.backupNotConfigured || state.backupLocalOnly)) {
-                BackupWarningBanner(
-                    message = if (state.backupNotConfigured) {
-                        "No backup folder set — your readings only live on this device. Set one in History tab."
-                    } else {
-                        "Backup folder is local storage — won't survive device loss. Pick a cloud folder in History tab."
-                    },
-                    onDismiss = { backupBannerDismissed = true }
-                )
+            // Backup-at-risk banner — no folder, lost access, failing syncs, or on-device only.
+            val backupBanner = state.backupBanner
+            if (!backupBannerDismissed && backupBanner != null) {
+                BackupWarningBanner(message = backupBanner, onDismiss = { backupBannerDismissed = true })
             }
 
             // Reference only — kept below the entry fields so capturing a reading never needs a scroll.

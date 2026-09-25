@@ -5,8 +5,19 @@ import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import java.time.Instant
 
 class ValidationTest {
+
+    @Test
+    fun `future reading times are rejected, with a little slack`() {
+        val now = Instant.parse("2026-09-25T09:00:00Z")
+        assertNull(validateTakenAt(now.minusSeconds(86_400), now))
+        assertNull(validateTakenAt(now, now))
+        assertNull(validateTakenAt(now.plusSeconds(4 * 60), now))
+        assertNotNull(validateTakenAt(now.plusSeconds(6 * 60), now))
+        assertNotNull(validateTakenAt(now.plusSeconds(86_400), now))
+    }
 
     @Test
     fun `typical reading is valid`() {

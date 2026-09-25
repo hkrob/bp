@@ -16,9 +16,12 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.SegmentedButton
 import androidx.compose.material3.SegmentedButtonDefaults
 import androidx.compose.material3.SingleChoiceSegmentedButtonRow
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -32,6 +35,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.robcloud.bloodpressure.data.Arm
+import com.robcloud.bloodpressure.data.DEFAULT_NOTE_TIME
 import com.robcloud.bloodpressure.data.Note
 import com.robcloud.bloodpressure.data.NoteType
 import com.robcloud.bloodpressure.data.Reading
@@ -41,8 +45,8 @@ import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 
-private val logDateFormatter: DateTimeFormatter =
-    DateTimeFormatter.ofPattern("dd/MM/yy HH:mm").withZone(ZoneId.systemDefault())
+private val logDateTimeFormatter: DateTimeFormatter = DateTimeFormatter.ofPattern("dd/MM/yy HH:mm")
+private val logDateFormatter: DateTimeFormatter = DateTimeFormatter.ofPattern("dd/MM/yy")
 
 private enum class ArmFilter(val label: String) {
     ALL("All"),
@@ -65,6 +69,16 @@ private sealed class LogEntry(val sortInstant: Instant) {
 @Composable
 fun LogScreen(viewModel: HistoryViewModel = viewModel()) {
     val state by viewModel.uiState.collectAsState()
+    val message by viewModel.message.collectAsState()
+    val snackbarHostState = remember { SnackbarHostState() }
+
+    // Deletes made here report through the shared ViewModel; show them here rather than
+    // leaving them to pop up later on the History tab.
+    LaunchedEffect(message) {
+        val text = message ?: return@LaunchedEffect
+        viewModel.consumeMessage()
+        snackbarHostState.showSnackbar(text)
+    }
     var editingReading by remember { mutableStateOf<Reading?>(null) }
     var editingNote by remember { mutableStateOf<Note?>(null) }
     var period by remember { mutableStateOf(Period.ALL) }
@@ -123,101 +137,110 @@ fun LogScreen(viewModel: HistoryViewModel = viewModel()) {
 
     val mono = MaterialTheme.typography.bodyMedium.copy(fontFamily = FontFamily.Monospace)
 
-    Column(Modifier.fillMaxSize()) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 12.dp, vertical = 8.dp),
-            horizontalArrangement = Arrangement.spacedBy(8.dp)
-        ) {
-            EqualWidthSegmentedRow(
-                options = Period.entries,
-                selected = period,
-                label = { it.label },
-                onSelect = { period = it },
-                modifier = Modifier.weight(1f)
-            )
-        }
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 12.dp, vertical = 4.dp),
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            SingleChoiceSegmentedButtonRow {
-                ArmFilter.entries.forEachIndexed { index, filter ->
-                    SegmentedButton(
-                        selected = armFilter == filter,
-                        onClick = { armFilter = filter },
-                        shape = SegmentedButtonDefaults.itemShape(index = index, count = ArmFilter.entries.size)
-                    ) {
-                        Text(filter.label, style = MaterialTheme.typography.bodyMedium)
-                    }
-                }
-            }
-            Text(
-                "${filteredReadings.size} ${if (filteredReadings.size == 1) "reading" else "readings"}",
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.padding(start = 4.dp)
-            )
-        }
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 12.dp, vertical = 4.dp),
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Text("Show notes", style = MaterialTheme.typography.bodyMedium)
-            Switch(checked = showNotes, onCheckedChange = { showNotes = it })
-            Text("Show meds", style = MaterialTheme.typography.bodyMedium, modifier = Modifier.padding(start = 8.dp))
-            Switch(checked = showMeds, onCheckedChange = { showMeds = it })
-        }
-
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .background(MaterialTheme.colorScheme.surfaceVariant)
-                .padding(horizontal = 12.dp, vertical = 6.dp)
-        ) {
-            Text(
-                "DATE     TIME    SYS/DIA  HR ARM",
-                style = mono.copy(fontWeight = FontWeight.Bold),
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-        }
-
-        if (entries.isEmpty()) {
-            Box(Modifier.fillMaxSize()) {
-                Text(
-                    "No readings match this filter",
-                    style = MaterialTheme.typography.bodyMedium,
-                    modifier = Modifier.align(Alignment.Center)
+    Box(Modifier.fillMaxSize()) {
+        Column(Modifier.fillMaxSize()) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 12.dp, vertical = 8.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                EqualWidthSegmentedRow(
+                    options = Period.entries,
+                    selected = period,
+                    label = { it.label },
+                    onSelect = { period = it },
+                    modifier = Modifier.weight(1f)
                 )
             }
-            return@Column
-        }
-
-        LazyColumn(Modifier.fillMaxSize()) {
-            items(
-                entries,
-                key = { entry ->
-                    when (entry) {
-                        is LogEntry.ReadingEntry -> "r-${entry.reading.id}"
-                        is LogEntry.NoteEntry -> "n-${entry.note.id}"
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 12.dp, vertical = 4.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                SingleChoiceSegmentedButtonRow {
+                    ArmFilter.entries.forEachIndexed { index, filter ->
+                        SegmentedButton(
+                            selected = armFilter == filter,
+                            onClick = { armFilter = filter },
+                            shape = SegmentedButtonDefaults.itemShape(index = index, count = ArmFilter.entries.size)
+                        ) {
+                            Text(filter.label, style = MaterialTheme.typography.bodyMedium)
+                        }
                     }
                 }
-            ) { entry ->
-                when (entry) {
-                    is LogEntry.ReadingEntry ->
-                        LogRow(entry.reading, mono, onClick = { editingReading = entry.reading })
-                    is LogEntry.NoteEntry ->
-                        NoteLogRow(entry.note, mono, onClick = { editingNote = entry.note })
+                Text(
+                    "${filteredReadings.size} ${if (filteredReadings.size == 1) "reading" else "readings"}",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(start = 4.dp)
+                )
+            }
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 12.dp, vertical = 4.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text("Show notes", style = MaterialTheme.typography.bodyMedium)
+                Switch(checked = showNotes, onCheckedChange = { showNotes = it })
+                Text("Show meds", style = MaterialTheme.typography.bodyMedium, modifier = Modifier.padding(start = 8.dp))
+                Switch(checked = showMeds, onCheckedChange = { showMeds = it })
+            }
+    
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .background(MaterialTheme.colorScheme.surfaceVariant)
+                    .padding(horizontal = 12.dp, vertical = 6.dp)
+            ) {
+                Text(
+                    // Columns match LogRow: "dd/MM/yy HH:mm " then a 7-wide BP, 3-wide HR, arm.
+                    "DATE     TIME  SYS/DIA  HR ARM",
+                    style = mono.copy(fontWeight = FontWeight.Bold),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+    
+            if (entries.isEmpty()) {
+                Box(Modifier.fillMaxSize()) {
+                    Text(
+                        "No readings match this filter",
+                        style = MaterialTheme.typography.bodyMedium,
+                        modifier = Modifier.align(Alignment.Center)
+                    )
+                }
+                return@Column
+            }
+    
+            LazyColumn(Modifier.fillMaxSize()) {
+                items(
+                    entries,
+                    key = { entry ->
+                        when (entry) {
+                            is LogEntry.ReadingEntry -> "r-${entry.reading.id}"
+                            is LogEntry.NoteEntry -> "n-${entry.note.id}"
+                        }
+                    }
+                ) { entry ->
+                    when (entry) {
+                        is LogEntry.ReadingEntry ->
+                            LogRow(entry.reading, mono, onClick = { editingReading = entry.reading })
+                        is LogEntry.NoteEntry ->
+                            NoteLogRow(entry.note, mono, onClick = { editingNote = entry.note })
+                    }
                 }
             }
         }
+        SnackbarHost(
+            hostState = snackbarHostState,
+            modifier = Modifier
+                .align(Alignment.BottomCenter)
+                .padding(16.dp)
+        )
     }
 }
 
@@ -227,8 +250,8 @@ private fun LogRow(
     mono: TextStyle,
     onClick: () -> Unit
 ) {
-    val dateTime = logDateFormatter.format(reading.takenAt)
-    val bp = "${reading.systolicMmHg}/${reading.diastolicMmHg}".padStart(7)
+    val dateTime = logDateTimeFormatter.format(reading.takenAt.atZone(ZoneId.systemDefault()))
+    val bp ="${reading.systolicMmHg}/${reading.diastolicMmHg}".padStart(7)
     val hr = reading.heartRateBpm.toString().padStart(3)
     val arm = if (reading.arm == Arm.LEFT) "L" else "R"
 
@@ -251,8 +274,13 @@ private fun LogRow(
  */
 @Composable
 private fun NoteLogRow(note: Note, mono: TextStyle, onClick: () -> Unit) {
-    val instant = note.date.atTime(note.time).atZone(ZoneId.systemDefault()).toInstant()
-    val dateTime = logDateFormatter.format(instant)
+    // Only Medication Taken notes carry a real clock time; for the others 00:01 is just a sort
+    // key, so the time column is left blank rather than showing a time that never happened.
+    val dateTime = if (note.noteType == NoteType.MEDICATION_TAKEN || note.time != DEFAULT_NOTE_TIME) {
+        logDateTimeFormatter.format(note.date.atTime(note.time))
+    } else {
+        logDateFormatter.format(note.date) + "      "
+    }
     val content = note.details.trim().ifEmpty { note.noteType.label }
 
     Row(

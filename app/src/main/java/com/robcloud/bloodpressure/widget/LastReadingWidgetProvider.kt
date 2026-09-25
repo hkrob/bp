@@ -5,16 +5,17 @@ import android.appwidget.AppWidgetManager
 import android.appwidget.AppWidgetProvider
 import android.content.ComponentName
 import android.content.Context
-import android.content.Intent
 import android.widget.RemoteViews
 import com.robcloud.bloodpressure.BloodPressureApp
-import com.robcloud.bloodpressure.MainActivity
 import com.robcloud.bloodpressure.R
+import com.robcloud.bloodpressure.reminders.appLaunchIntent
 import com.robcloud.bloodpressure.ui.Formatters
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
+
+private const val WIDGET_REQUEST_CODE = 2
 
 /** Home-screen widget showing the most recent reading. Tapping it opens the app. */
 class LastReadingWidgetProvider : AppWidgetProvider() {
@@ -53,9 +54,8 @@ class LastReadingWidgetProvider : AppWidgetProvider() {
                 )
             }
 
-            val intent = Intent(context, MainActivity::class.java)
             val pendingIntent = PendingIntent.getActivity(
-                context, 0, intent,
+                context, WIDGET_REQUEST_CODE, appLaunchIntent(context),
                 PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
             )
             views.setOnClickPendingIntent(R.id.widget_root, pendingIntent)

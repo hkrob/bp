@@ -9,7 +9,16 @@ import java.time.LocalDate
 import java.time.LocalDateTime
 import java.time.LocalTime
 
-data class ParsedCsv(val readings: List<Reading>, val notes: List<Note>)
+/**
+ * [skippedRows] counts non-blank data rows that produced neither a reading nor a note (wrong
+ * column count, unparseable value, unknown record type). Sync must not overwrite a file whose
+ * rows it couldn't read, or those rows are lost.
+ */
+data class ParsedCsv(val readings: List<Reading>, val notes: List<Note>, val skippedRows: Int = 0) {
+    companion object {
+        val EMPTY = ParsedCsv(emptyList(), emptyList())
+    }
+}
 
 /**
  * Single CSV backs up both readings and notes, distinguished by a leading record_type
@@ -45,23 +54,39 @@ object Csv {
         return lines.joinToString("\n") + "\n"
     }
 
+    /**
+     * True if [csv] is empty or starts with one of this app's headers — i.e. it is safe for sync
+     * to adopt and rewrite. A same-named file written by some other app is left alone.
+     */
+    fun isBackupFile(csv: String): Boolean {
+        val header = parseRows(csv.removePrefix(BOM)).firstOrNull { row -> row.any { it.isNotBlank() } }
+            ?: return true
+        return header == HEADER || header == LEGACY_HEADER
+    }
+
     fun parse(csv: String): ParsedCsv {
-        val rows = parseRows(csv).filter { row -> row.any { it.isNotBlank() } }
-        if (rows.isEmpty()) return ParsedCsv(emptyList(), emptyList())
+        // Spreadsheet apps often save UTF-8 with a byte-order mark, which would otherwise stick
+        // to the first header cell and make a known header unrecognisable.
+        val rows = parseRows(csv.removePrefix(BOM)).filter { row -> row.any { it.isNotBlank() } }
+        if (rows.isEmpty()) return ParsedCsv.EMPTY
 
         val header = rows.first()
         val dataRows = rows.drop(1)
 
         if (header == LEGACY_HEADER) {
             val readings = dataRows.mapNotNull { parts -> parseLegacyReading(parts) }
-            return ParsedCsv(readings, emptyList())
+            return ParsedCsv(readings, emptyList(), skippedRows = dataRows.size - readings.size)
         }
 
         val readings = mutableListOf<Reading>()
         val notes = mutableListOf<Note>()
+        var skipped = 0
         for (parts in dataRows) {
-            if (parts.size != HEADER.size) continue
-            runCatching {
+            if (parts.size != HEADER.size) {
+                skipped++
+                continue
+            }
+            val parsed = runCatching {
                 when (parts[0]) {
                     "READING" -> readings.add(
                         Reading(
@@ -85,11 +110,16 @@ object Csv {
                             )
                         )
                     }
+                    else -> false
                 }
-            }
+            }.getOrDefault(false)
+            if (!parsed) skipped++
         }
-        return ParsedCsv(readings, notes)
+        return ParsedCsv(readings, notes, skipped)
     }
+
+    /** U+FEFF, the byte-order mark (built from its code point to keep the source plain ASCII). */
+    private val BOM = Char(0xFEFF).toString()
 
     /**
      * Notes now store a full local date-time (e.g. 2026-07-20T16:24). Legacy backups wrote a
@@ -121,7 +151,7 @@ object Csv {
             "\"" + value.replace("\"", "\"\"") + "\""
         else value
 
-    private val FORMULA_TRIGGER_CHARS = charArrayOf('=', '+', '-', '@', '\t')
+    private val FORMULA_TRIGGER_CHARS = charArrayOf('=', '+', '-', '@', '\t', '\r')
 
     /**
      * Spreadsheet apps execute cells starting with = + - @ as formulas, so a note like

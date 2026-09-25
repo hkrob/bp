@@ -5,4 +5,5 @@
     <include domain="sharedpref" path="backup_prefs.xml" />
     <include domain="sharedpref" path="reminder_prefs.xml" />
     <include domain="sharedpref" path="theme_prefs.xml" />
+    <include domain="sharedpref" path="capture_prefs.xml" />
 </full-backup-content>

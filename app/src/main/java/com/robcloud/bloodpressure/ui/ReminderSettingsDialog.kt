@@ -1,5 +1,7 @@
 package com.robcloud.bloodpressure.ui
 
+import android.content.Intent
+import android.provider.Settings
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -30,6 +32,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
+import com.robcloud.bloodpressure.reminders.NotificationHelper
 import com.robcloud.bloodpressure.reminders.ReminderSettings
 import com.robcloud.bloodpressure.reminders.ReminderTime
 
@@ -42,6 +45,7 @@ fun ReminderSettingsDialog(
     val context = LocalContext.current
     var enabled by remember { mutableStateOf(settings.enabled) }
     val times = remember { mutableStateListOf(*settings.times.toTypedArray()) }
+    val notificationsBlocked = remember { !NotificationHelper.canShowReminders(context) }
 
     Dialog(onDismissRequest = onDismiss) {
         Surface(shape = MaterialTheme.shapes.large, color = MaterialTheme.colorScheme.surface) {
@@ -58,6 +62,21 @@ fun ReminderSettingsDialog(
                 ) {
                     Text("Remind me every day")
                     Switch(checked = enabled, onCheckedChange = { enabled = it })
+                }
+
+                if (enabled && notificationsBlocked) {
+                    Text(
+                        "Notifications are currently off for BP Tracker, so reminders won't appear. " +
+                            "Saving will ask for permission; if it was refused before, allow it in settings.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.error
+                    )
+                    TextButton(onClick = {
+                        context.startActivity(
+                            Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS)
+                                .putExtra(Settings.EXTRA_APP_PACKAGE, context.packageName)
+                        )
+                    }) { Text("Open notification settings") }
                 }
 
                 if (enabled) {

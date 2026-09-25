@@ -37,10 +37,14 @@ import com.robcloud.bloodpressure.data.NOTE_DETAILS_MAX_LENGTH
 import com.robcloud.bloodpressure.data.Note
 import com.robcloud.bloodpressure.data.NoteType
 import com.robcloud.bloodpressure.ui.showDatePickerFor
+import com.robcloud.bloodpressure.ui.showTimePickerFor
 import java.time.LocalDate
+import java.time.LocalTime
 import java.time.format.DateTimeFormatter
+import java.time.format.FormatStyle
 
 private val editNoteDateFormatter = DateTimeFormatter.ofPattern("d MMM yyyy")
+private val editNoteTimeFormatter = DateTimeFormatter.ofLocalizedTime(FormatStyle.SHORT)
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -52,6 +56,7 @@ fun EditNoteDialog(
 ) {
     val context = LocalContext.current
     var date by remember { mutableStateOf(note.date) }
+    var time by remember { mutableStateOf(note.time) }
     var noteType by remember { mutableStateOf(note.noteType) }
     var details by remember { mutableStateOf(note.details) }
     var typeMenuExpanded by remember { mutableStateOf(false) }
@@ -100,6 +105,17 @@ fun EditNoteDialog(
                             modifier = Modifier.padding(end = 6.dp)
                         )
                         Text(editNoteDateFormatter.format(date), maxLines = 1)
+                    }
+                    // Medication Taken is the one type whose time is real data (when the dose
+                    // was taken), so it's the one type whose time can be corrected here.
+                    if (noteType == NoteType.MEDICATION_TAKEN) {
+                        OutlinedButton(
+                            onClick = { showTimePickerFor(context, time.hour, time.minute) { h, m -> time = LocalTime.of(h, m) } },
+                            modifier = Modifier.weight(0.8f),
+                            contentPadding = PaddingValues(horizontal = 8.dp)
+                        ) {
+                            Text(editNoteTimeFormatter.format(time), maxLines = 1)
+                        }
                     }
                     OutlinedButton(
                         onClick = { date = LocalDate.now() },
@@ -177,7 +193,7 @@ fun EditNoteDialog(
                             if (trimmed.isEmpty() && noteType != NoteType.MEDICATION_TAKEN) {
                                 errorMessage = "Enter some details for the note"
                             } else {
-                                onSave(note.copy(date = date, noteType = noteType, details = trimmed))
+                                onSave(note.copy(date = date, noteType = noteType, details = trimmed, time = time))
                             }
                         }) {
                             Text("Save")

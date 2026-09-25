@@ -1,6 +1,8 @@
 package com.robcloud.bloodpressure.ui.history
 
 import android.net.Uri
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -17,14 +19,16 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.documentfile.provider.DocumentFile
-import com.robcloud.bloodpressure.backup.StorageHost
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 /**
  * Lets the user pick a destination folder (via the system folder picker) and type their own
@@ -34,16 +38,26 @@ import kotlinx.coroutines.launch
  */
 @Composable
 fun ExportCsvDialog(
-    storageHost: StorageHost,
     defaultFileName: String,
     onDismiss: () -> Unit,
     onExport: (folderUri: Uri, fileName: String) -> Unit
 ) {
     val context = LocalContext.current
     val coroutineScope = rememberCoroutineScope()
-    var folderUri by remember { mutableStateOf<Uri?>(null) }
-    var folderLabel by remember { mutableStateOf<String?>(null) }
-    var fileName by remember { mutableStateOf(defaultFileName) }
+    var folderUri by rememberSaveable { mutableStateOf<Uri?>(null) }
+    var folderLabel by rememberSaveable { mutableStateOf<String?>(null) }
+    var fileName by rememberSaveable { mutableStateOf(defaultFileName) }
+    // A one-off export only needs the temporary grant the picker gives; no persistable grant.
+    val folderLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri ->
+        if (uri != null) {
+            folderUri = uri
+            coroutineScope.launch {
+                folderLabel = withContext(Dispatchers.IO) {
+                    runCatching { DocumentFile.fromTreeUri(context, uri)?.name }.getOrNull()
+                }
+            }
+        }
+    }
 
     Dialog(onDismissRequest = onDismiss) {
         Surface(shape = MaterialTheme.shapes.large, color = MaterialTheme.colorScheme.surface) {
@@ -56,15 +70,7 @@ fun ExportCsvDialog(
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Text("Destination folder", style = MaterialTheme.typography.labelLarge)
                     OutlinedButton(
-                        onClick = {
-                            coroutineScope.launch {
-                                val uri = storageHost.pickFolder() ?: return@launch
-                                folderUri = uri
-                                folderLabel = runCatching {
-                                    DocumentFile.fromTreeUri(context, uri)?.name
-                                }.getOrNull()
-                            }
-                        },
+                        onClick = { folderLauncher.launch(null) },
                         modifier = Modifier.fillMaxWidth()
                     ) {
                         Text(folderLabel ?: "Choose folder", maxLines = 1)
