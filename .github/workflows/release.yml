@@ -164,7 +164,7 @@ jobs:
 
       - name: Build the signed release APK
         if: steps.existing.outputs.skip != 'true'
-        run:./gradlew --no-daemon :app:assembleRelease
+        run: ./gradlew --no-daemon :app:assembleRelease
 
       - name: Verify the APK carries the expected signature
         if: steps.existing.outputs.skip != 'true'
