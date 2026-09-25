@@ -45,6 +45,10 @@ jobs:
           cache: gradle
 
       - uses: android-actions/setup-android@v3
+        with:
+          # The action's default list includes the long-obsolete `tools` package, which newer
+          # cmdline-tools (16+) no longer know, failing the job before anything builds.
+          packages: platform-tools
 
       - name: Install the SDK packages this project compiles against
         run: sdkmanager --install "platforms;android-36" "build-tools;36.0.0" > /dev/null
