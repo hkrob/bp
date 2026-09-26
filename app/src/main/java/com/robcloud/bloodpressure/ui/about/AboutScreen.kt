@@ -35,6 +35,12 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.LinkAnnotation
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.TextLinkStyles
+import androidx.compose.ui.text.buildAnnotatedString
+import androidx.compose.ui.text.style.TextDecoration
+import androidx.compose.ui.text.withLink
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.robcloud.bloodpressure.BloodPressureApp
@@ -44,6 +50,7 @@ import com.robcloud.bloodpressure.backup.status
 import com.robcloud.bloodpressure.ui.EqualWidthSegmentedRow
 import com.robcloud.bloodpressure.ui.Formatters
 import com.robcloud.bloodpressure.update.UpdateCheckFrequency
+import com.robcloud.bloodpressure.update.UpdateConfig
 import com.robcloud.bloodpressure.update.UpdateManager
 import com.robcloud.bloodpressure.update.UpdatePrefsStore
 import com.robcloud.bloodpressure.update.UpdateScheduler
@@ -58,6 +65,9 @@ private const val FEEDBACK_EMAIL = "android.bp@robcloud.qzz.io"
 
 /** Newest first; keep the three most recent versions here (older entries drop off). */
 private val CHANGELOG = listOf(
+    "2.7.2" to listOf(
+        "The About tab links to the project's page on GitHub, where you can see the source and releases and report issues."
+    ),
     "2.7.1" to listOf(
         "No changes to how the app works. This release re-checks the build and the in-app update from 2.7.0."
     ),
@@ -71,9 +81,6 @@ private val CHANGELOG = listOf(
         "A reading or note you are part way through entering is kept if Android closes the app in the background.",
         "The update check now says when GitHub's hourly limit has been reached, and how long to wait, instead of \"Couldn't reach GitHub\".",
         "The backup file gains an irregular_heartbeat column. Older versions of the app will refuse to sync with it (nothing is lost), so update the app on every phone that uses the same backup folder."
-    ),
-    "2.6.1" to listOf(
-        "Confirmation messages are back: \"Reading saved\", \"Note saved\", \"Reading deleted\", and the results of Import and Export (including any errors) were being cleared before they could appear in 2.6.0."
     ),
 )
 
@@ -100,6 +107,7 @@ fun AboutScreen(updateViewModel: UpdateViewModel = viewModel()) {
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
+            ProjectLink()
         }
 
         BackupSection()
@@ -209,6 +217,24 @@ private fun BackupSection() {
             }
         }
     }
+}
+
+/** Opens the project's GitHub page (source, releases and issues) in the browser. */
+@Composable
+private fun ProjectLink() {
+    val url = UpdateConfig.projectUrl
+    val linkStyles = TextLinkStyles(
+        style = SpanStyle(
+            color = MaterialTheme.colorScheme.primary,
+            textDecoration = TextDecoration.Underline
+        )
+    )
+    Text(
+        buildAnnotatedString {
+            withLink(LinkAnnotation.Url(url, linkStyles)) { append(url.removePrefix("https://")) }
+        },
+        style = MaterialTheme.typography.bodyMedium
+    )
 }
 
 @Composable
