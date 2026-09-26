@@ -58,6 +58,9 @@ private const val FEEDBACK_EMAIL = "android.bp@robcloud.qzz.io"
 
 /** Newest first; keep the three most recent versions here (older entries drop off). */
 private val CHANGELOG = listOf(
+    "2.7.1" to listOf(
+        "No changes to how the app works. This release re-checks the build and the in-app update from 2.7.0."
+    ),
     "2.7.0" to listOf(
         "Low readings (under 90 systolic or under 60 diastolic) are now marked \"Low\", in blue.",
         "Readings taken within 10 minutes of each other are grouped as a sitting, with the sitting's average shown in History and counted in the PDF report.",
@@ -71,16 +74,6 @@ private val CHANGELOG = listOf(
     ),
     "2.6.1" to listOf(
         "Confirmation messages are back: \"Reading saved\", \"Note saved\", \"Reading deleted\", and the results of Import and Export (including any errors) were being cleared before they could appear in 2.6.0."
-    ),
-    "2.6.0" to listOf(
-        "Safer backups: a sync can no longer undo an edit or bring back a deleted reading, rows the app can't read are never overwritten, a readings.csv written by another app is left alone, and a dated copy of the backup file is kept each day.",
-        "You can now change the backup folder, and after moving to a new phone the app asks you to re-link it instead of failing silently. Backups that keep failing now show a warning on Add reading.",
-        "Add reading remembers which arm you use, keeps a date or time you picked when you switch apps, won't save a reading twice on a double tap, and won't accept a time in the future.",
-        "Medication Taken notes added from the Add note tab record the real time, and the time can be corrected when editing.",
-        "Daily reminders stay at the time you set (they used to drift later and shift by an hour at daylight-saving changes), and the app tells you when notifications are blocked.",
-        "Import only adds readings and notes that are missing, so it no longer reverts later edits, and large files now import on Android 8-11.",
-        "History scrolls as one page, so the readings list no longer vanishes in landscape, and older readings show their year.",
-        "Fixes to the PDF report (note markers, medication times, long notes), Log column alignment, 24-hour time pickers and status bar icons in Dark and Console themes."
     ),
 )
 
