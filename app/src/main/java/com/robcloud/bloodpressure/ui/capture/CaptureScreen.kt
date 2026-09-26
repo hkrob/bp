@@ -1,5 +1,8 @@
 package com.robcloud.bloodpressure.ui.capture
 
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -40,6 +43,7 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -50,6 +54,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalHapticFeedback
@@ -98,6 +104,9 @@ fun CaptureScreen(
     val context = LocalContext.current
     val snackbarHostState = remember { SnackbarHostState() }
     val haptics = LocalHapticFeedback.current
+    // Bumped on each save so the Last reading card can pulse. Starts at 0 and lives with this
+    // composition, so returning to the tab never replays it.
+    var savePulse by remember { mutableIntStateOf(0) }
     val diastolicFocus = remember { FocusRequester() }
     val heartRateFocus = remember { FocusRequester() }
 
@@ -109,6 +118,7 @@ fun CaptureScreen(
         viewModel.uiState.map { it.justSaved }.distinctUntilChanged().filter { it }.collect {
             viewModel.consumeSavedFlag()
             haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+            savePulse++
             snackbarHostState.showSnackbar("Reading saved")
         }
     }
@@ -303,7 +313,7 @@ fun CaptureScreen(
             }
 
             // Reference only — kept below the entry fields so capturing a reading never needs a scroll.
-            lastReading?.let { LastReadingCard(it, previousReading) }
+            lastReading?.let { LastReadingCard(it, previousReading, savePulse) }
         }
 
         SnackbarHost(hostState = snackbarHostState) { data ->
@@ -378,13 +388,37 @@ private fun BackupWarningBanner(message: String, onDismiss: () -> Unit) {
     }
 }
 
+private val ACCENT_BAR_WIDTH = 6.dp
+private const val PULSE_PEAK_ALPHA = 0.3f
+
 @Composable
-private fun LastReadingCard(reading: Reading, previous: Reading?) {
+private fun LastReadingCard(reading: Reading, previous: Reading?, savePulse: Int) {
+    val category = reading.bpCategory()
+    val accent by animateColorAsState(categoryColor(category), label = "categoryAccent")
+
+    // A brief wash of the category colour after a save. Animatable follows the system animation
+    // scale, so with animations turned off it jumps straight back to nothing.
+    val pulse = remember { Animatable(0f) }
+    LaunchedEffect(savePulse) {
+        if (savePulse > 0) {
+            pulse.snapTo(PULSE_PEAK_ALPHA)
+            pulse.animateTo(0f, tween(durationMillis = 900))
+        }
+    }
+
     Card(
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer),
         modifier = Modifier.fillMaxWidth()
     ) {
-        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        Column(
+            Modifier
+                .drawBehind {
+                    drawRect(accent.copy(alpha = pulse.value))
+                    drawRect(accent, size = Size(ACCENT_BAR_WIDTH.toPx(), size.height))
+                }
+                .padding(start = 16.dp + ACCENT_BAR_WIDTH, top = 16.dp, end = 16.dp, bottom = 16.dp),
+            verticalArrangement = Arrangement.spacedBy(4.dp)
+        ) {
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
@@ -396,9 +430,9 @@ private fun LastReadingCard(reading: Reading, previous: Reading?) {
                     color = MaterialTheme.colorScheme.onPrimaryContainer
                 )
                 Text(
-                    reading.bpCategory().label,
+                    category.label,
                     style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.Bold),
-                    color = categoryColor(reading.bpCategory())
+                    color = accent
                 )
             }
             Row(verticalAlignment = Alignment.Bottom, horizontalArrangement = Arrangement.spacedBy(6.dp)) {

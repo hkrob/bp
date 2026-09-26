@@ -65,22 +65,16 @@ private const val FEEDBACK_EMAIL = "android.bp@robcloud.qzz.io"
 
 /** Newest first; keep the three most recent versions here (older entries drop off). */
 private val CHANGELOG = listOf(
+    "2.8.0" to listOf(
+        "The Last reading card has an edge in the colour of the reading's category. After you save a reading, the card briefly glows in that colour.",
+        "The History chart draws in from the left when it appears.",
+        "The animations are skipped if animations are turned off on your phone."
+    ),
     "2.7.2" to listOf(
         "The About tab links to the project's page on GitHub, where you can see the source and releases and report issues."
     ),
     "2.7.1" to listOf(
         "No changes to how the app works. This release re-checks the build and the in-app update from 2.7.0."
-    ),
-    "2.7.0" to listOf(
-        "Low readings (under 90 systolic or under 60 diastolic) are now marked \"Low\", in blue.",
-        "Readings taken within 10 minutes of each other are grouped as a sitting, with the sitting's average shown in History and counted in the PDF report.",
-        "History and the PDF report show separate averages for mornings (before 12:00) and afternoons & evenings.",
-        "You can record that the monitor showed an irregular heartbeat. Flagged readings are marked IRR in History, the Log and the PDF report, and the flag is kept in the backup file.",
-        "Daily reminders follow the phone's time zone: after travelling, or changing the clock, they come at the chosen local time straight away instead of a day later.",
-        "Deleting a reading or note can now be undone from the message that confirms it.",
-        "A reading or note you are part way through entering is kept if Android closes the app in the background.",
-        "The update check now says when GitHub's hourly limit has been reached, and how long to wait, instead of \"Couldn't reach GitHub\".",
-        "The backup file gains an irregular_heartbeat column. Older versions of the app will refuse to sync with it (nothing is lost), so update the app on every phone that uses the same backup folder."
     ),
 )
 
