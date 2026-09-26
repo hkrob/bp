@@ -27,6 +27,10 @@ object UpdateConfig {
     val latestReleaseApiUrl: String
         get() = "https://api.github.com/repos/$OWNER/$REPO/releases/latest"
 
+    /** The project's page on GitHub, linked from the About tab. */
+    val projectUrl: String
+        get() = "https://github.com/$OWNER/$REPO"
+
     val isConfigured: Boolean get() = OWNER != "OWNER" && REPO != "REPO"
 }
 
