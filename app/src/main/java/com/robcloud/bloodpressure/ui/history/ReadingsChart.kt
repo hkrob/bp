@@ -1,5 +1,8 @@
 package com.robcloud.bloodpressure.ui.history
 
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -17,7 +20,9 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.drawscope.clipRect
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.unit.sp
@@ -85,6 +90,12 @@ fun ReadingsChart(readings: List<Reading>, modifier: Modifier = Modifier) {
         return
     }
 
+    // Wipe the chart in from the left when it first appears. Animatable follows the system
+    // animation scale, so with animations turned off it is fully revealed at once. Later changes
+    // to the readings or the period are animated by Vico itself.
+    val reveal = remember { Animatable(0f) }
+    LaunchedEffect(Unit) { reveal.animateTo(1f, tween(durationMillis = 700, easing = FastOutSlowInEasing)) }
+
     val chartColors = LocalChartColors.current
     val lineColors = listOf(chartColors.systolic, chartColors.diastolic, chartColors.heartRate)
 
@@ -126,7 +137,10 @@ fun ReadingsChart(readings: List<Reading>, modifier: Modifier = Modifier) {
             modelProducer = modelProducer,
             modifier = Modifier
                 .fillMaxWidth()
-                .height(220.dp),
+                .height(220.dp)
+                .drawWithContent {
+                    clipRect(right = size.width * reveal.value) { this@drawWithContent.drawContent() }
+                },
             scrollState = rememberVicoScrollState(scrollEnabled = false)
         )
         ChartLegend(lineColors)
