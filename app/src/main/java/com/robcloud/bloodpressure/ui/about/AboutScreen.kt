@@ -60,11 +60,20 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.time.Duration
 import java.time.Instant
+import java.util.Locale
 
 private const val FEEDBACK_EMAIL = "android.bp@robcloud.qzz.io"
 
 /** Newest first; keep the three most recent versions here (older entries drop off). */
 private val CHANGELOG = listOf(
+    "2.9.0" to listOf(
+        "The home screen widget now shows the reading's category colour and an irregular-heartbeat mark, matching History, the Log and the PDF report.",
+        "The shared PDF report's category colours now match the rest of the app exactly.",
+        "Fixed: a reminder you'd just turned off could still fire one more time.",
+        "Fixed: picking a new cloud backup folder could show a failure message when the provider just needed a moment to load after being granted access.",
+        "The update banner now reflects a background check (or a newly installed update) without needing to reopen the app.",
+        "Various other reliability fixes under the hood."
+    ),
     "2.8.0" to listOf(
         "The Last reading card has an edge in the colour of the reading's category. After you save a reading, the card briefly glows in that colour.",
         "The History chart draws in from the left when it appears.",
@@ -72,9 +81,6 @@ private val CHANGELOG = listOf(
     ),
     "2.7.2" to listOf(
         "The About tab links to the project's page on GitHub, where you can see the source and releases and report issues."
-    ),
-    "2.7.1" to listOf(
-        "No changes to how the app works. This release re-checks the build and the in-app update from 2.7.0."
     ),
 )
 
@@ -379,10 +385,12 @@ private fun UpdateSection(viewModel: UpdateViewModel) {
 }
 
 private fun formatBytes(bytes: Long): String {
+    // Locale.US, not the device default: a size like "1.5 GB" shouldn't become "1,5 GB" on a
+    // device set to a comma-decimal locale.
     return when {
-        bytes >= 1_000_000_000 -> String.format("%.1f GB", bytes / 1_000_000_000.0)
-        bytes >= 1_000_000 -> String.format("%.1f MB", bytes / 1_000_000.0)
-        bytes >= 1_000 -> String.format("%.0f KB", bytes / 1_000.0)
+        bytes >= 1_000_000_000 -> String.format(Locale.US, "%.1f GB", bytes / 1_000_000_000.0)
+        bytes >= 1_000_000 -> String.format(Locale.US, "%.1f MB", bytes / 1_000_000.0)
+        bytes >= 1_000 -> String.format(Locale.US, "%.0f KB", bytes / 1_000.0)
         else -> "$bytes B"
     }
 }

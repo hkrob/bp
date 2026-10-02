@@ -24,6 +24,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.map
@@ -98,7 +99,16 @@ class HistoryViewModel(application: Application) : AndroidViewModel(application)
                 syncing = syncing,
                 backup = backup
             )
-        }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), HistoryUiState())
+        }
+            // Room's enum converters (Arm/NoteType) throw if a row holds a value the current
+            // build doesn't recognise (an out-of-band edit, or a restored older/newer database).
+            // Without this, that one bad row would kill this Flow for good — History/Log would
+            // silently stop updating until the app restarts — instead of just this emission.
+            .catch { e ->
+                say("Couldn't read some stored data (${e.message ?: e.javaClass.simpleName}); showing nothing from it")
+                emit(HistoryUiState())
+            }
+            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), HistoryUiState())
 
     init {
         viewModelScope.launch(Dispatchers.IO) {

@@ -9,6 +9,10 @@ import com.robcloud.bloodpressure.reminders.ReminderScheduler
 import com.robcloud.bloodpressure.reminders.ReminderStore
 import com.robcloud.bloodpressure.update.UpdatePrefsStore
 import com.robcloud.bloodpressure.update.UpdateScheduler
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.launch
 
 class BloodPressureApp : Application() {
     val database by lazy { AppDatabase.getInstance(this) }
@@ -17,10 +21,15 @@ class BloodPressureApp : Application() {
 
     override fun onCreate() {
         super.onCreate()
-        BackupSyncWorker.scheduleDaily(this)
-        UpdateScheduler.schedule(this, UpdatePrefsStore(this).frequency)
-        // Reminder settings survive a backup restore but WorkManager's queue doesn't, and older
-        // versions scheduled reminders differently — make sure the next one is always armed.
-        ReminderScheduler.ensureScheduled(this, ReminderStore(this).get())
+        // None of these three need to finish before the first frame — each is prefs reads plus
+        // WorkManager's own (binder-backed) scheduling — so don't make every cold start pay for
+        // them serially on the main thread.
+        CoroutineScope(SupervisorJob() + Dispatchers.Default).launch {
+            BackupSyncWorker.scheduleDaily(this@BloodPressureApp)
+            UpdateScheduler.schedule(this@BloodPressureApp, UpdatePrefsStore(this@BloodPressureApp).frequency)
+            // Reminder settings survive a backup restore but WorkManager's queue doesn't, and
+            // older versions scheduled reminders differently — make sure the next one is armed.
+            ReminderScheduler.ensureScheduled(this@BloodPressureApp, ReminderStore(this@BloodPressureApp).get())
+        }
     }
 }

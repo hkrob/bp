@@ -33,14 +33,25 @@ class UpdateViewModel(application: Application) : AndroidViewModel(application) 
     val cachedRelease: StateFlow<ReleaseInfo?> = _cachedRelease.asStateFlow()
 
     init {
-        val cached = store.loadLatestRelease()
-        if (cached != null && UpdateManager.isNewer(cached.versionName, BuildConfig.VERSION_NAME)) {
-            _cachedRelease.value = cached
-            // The Add reading banner sends the user here: show the update straight away rather
-            // than an idle "Check for updates" button.
-            _state.value = UpdateUiState.Available(cached)
-        } else if (cached != null) {
-            store.clearLatestRelease()
+        // Follows the prefs store rather than reading it once, so a release the periodic
+        // UpdateCheckWorker finds (or clears) while this ViewModel is alive — the app backgrounded
+        // but not killed — reaches cachedRelease/state too, not just a fresh process start.
+        viewModelScope.launch {
+            store.changes().collect {
+                val cached = store.loadLatestRelease()
+                val newer = cached != null && UpdateManager.isNewer(cached.versionName, BuildConfig.VERSION_NAME)
+                _cachedRelease.value = if (newer) cached else null
+                if (!newer && cached != null) store.clearLatestRelease()
+                // Only move into/out of the banner state when nothing else is in progress — a
+                // background write shouldn't interrupt a check/download/install the user started.
+                when (_state.value) {
+                    is UpdateUiState.Idle, is UpdateUiState.UpToDate, is UpdateUiState.Available ->
+                        // The Add reading banner sends the user here: show the update straight
+                        // away rather than an idle "Check for updates" button.
+                        _state.value = if (newer) UpdateUiState.Available(cached!!) else UpdateUiState.Idle
+                    else -> Unit
+                }
+            }
         }
     }
 

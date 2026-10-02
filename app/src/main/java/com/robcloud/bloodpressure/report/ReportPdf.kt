@@ -57,10 +57,13 @@ object ReportPdf {
     private const val COLOR_HR = 0xFFD98A8A.toInt()
     private const val COLOR_NOTE = 0xFF7E57C2.toInt()
 
-    private fun categoryColor(category: BpCategory): Int = when (category) {
-        BpCategory.LOW -> 0xFF1F6FD1.toInt()
+    // Matches ui/theme/Color.kt's StatusLow/StatusNormal/StatusElevated/StatusHigh exactly, so a
+    // reading isn't shown in a different shade in the report than everywhere else in the app.
+    // internal (not private) so ReportPdfCategoryColorTest can check that parity holds.
+    internal fun categoryColor(category: BpCategory): Int = when (category) {
+        BpCategory.LOW -> 0xFF2F80ED.toInt()
         BpCategory.NORMAL -> 0xFF2E7D32.toInt()
-        BpCategory.ELEVATED, BpCategory.STAGE_1 -> 0xFFCC8800.toInt()
+        BpCategory.ELEVATED, BpCategory.STAGE_1 -> 0xFFF9A825.toInt()
         BpCategory.STAGE_2, BpCategory.CRISIS -> 0xFFD32F2F.toInt()
     }
 
@@ -91,8 +94,13 @@ object ReportPdf {
 
         val dir = File(context.cacheDir, "reports").apply { mkdirs() }
         val file = File(dir, "BP-Report-${fileStampFmt.format(Instant.now())}.pdf")
-        file.outputStream().use { doc.writeTo(it) }
-        doc.close()
+        try {
+            file.outputStream().use { doc.writeTo(it) }
+        } finally {
+            // Always release the native PdfDocument, even if writeTo() fails (e.g. cache full) —
+            // otherwise a failed report leaks it and a retry leaks another.
+            doc.close()
+        }
 
         return FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", file)
     }
