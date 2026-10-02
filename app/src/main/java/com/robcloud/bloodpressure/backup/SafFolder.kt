@@ -6,6 +6,9 @@ import android.provider.DocumentsContract
 import android.provider.DocumentsContract.Document
 import java.io.IOException
 
+private const val LOADING_RETRY_ATTEMPTS = 4
+private const val LOADING_RETRY_DELAY_MS = 400L
+
 /**
  * Thin wrapper over [DocumentsContract] for one folder inside a SAF tree. Used instead of
  * DocumentFile because DocumentFile swallows provider errors — a failed or still-loading folder
@@ -21,14 +24,20 @@ internal class SafFolder(
 
     private val documentUri: Uri = DocumentsContract.buildDocumentUriUsingTree(treeUri, documentId)
 
-    /** Children named [name]. Throws if the listing fails, or is incomplete and has no match. */
+    /**
+     * Children named [name]. Throws if the listing fails, or is still incomplete after a few
+     * short retries and has no match. Many providers (Drive, Dropbox) report the first listing
+     * right after this app is granted access as still loading, for a few hundred ms — retrying
+     * briefly avoids surfacing that as a sync failure at the exact moment the user picks a folder.
+     */
     fun find(name: String, directory: Boolean = false): List<Child> {
-        val (children, loading) = list()
-        val matches = children.filter { it.name == name && it.isDirectory == directory }
-        if (matches.isEmpty() && loading) {
-            throw IOException("The backup folder is still loading from the storage provider — try again shortly")
+        repeat(LOADING_RETRY_ATTEMPTS) { attempt ->
+            val (children, loading) = list()
+            val matches = children.filter { it.name == name && it.isDirectory == directory }
+            if (matches.isNotEmpty() || !loading) return matches.sortedBy { it.documentId }
+            if (attempt < LOADING_RETRY_ATTEMPTS - 1) Thread.sleep(LOADING_RETRY_DELAY_MS)
         }
-        return matches.sortedBy { it.documentId }
+        throw IOException("The backup folder is still loading from the storage provider — try again shortly")
     }
 
     fun children(): List<Child> = list().first

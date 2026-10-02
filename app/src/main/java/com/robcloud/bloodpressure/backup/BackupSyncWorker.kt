@@ -1,9 +1,11 @@
 package com.robcloud.bloodpressure.backup
 
 import android.content.Context
+import androidx.work.Constraints
 import androidx.work.CoroutineWorker
 import androidx.work.ExistingPeriodicWorkPolicy
 import androidx.work.ExistingWorkPolicy
+import androidx.work.NetworkType
 import androidx.work.OneTimeWorkRequestBuilder
 import androidx.work.PeriodicWorkRequestBuilder
 import androidx.work.WorkManager
@@ -49,6 +51,17 @@ class BackupSyncWorker(context: Context, params: WorkerParameters) : CoroutineWo
         private const val AFTER_CHANGE_WORK_NAME = "after_change_sync"
 
         /**
+         * A cloud-backed folder needs connectivity; on-device storage (SAF's "external storage"
+         * provider, see [BackupFolderStore.isLocalOnly]) doesn't and shouldn't wait for it. Reads
+         * only cached prefs, so it's safe to call from any thread, including the caller's own.
+         */
+        private fun constraints(context: Context): Constraints {
+            val localOnly = (context.applicationContext as BloodPressureApp).backupFolderStore.isLocalOnly()
+            return if (localOnly) Constraints.NONE
+            else Constraints.Builder().setRequiredNetworkType(NetworkType.CONNECTED).build()
+        }
+
+        /**
          * Syncs soon after a local change. Unique so rapid saves don't queue a pile of syncs (or
          * of retrying failures): a newer request replaces a pending one, and each run reads the
          * database fresh, so nothing is lost by the replacement.
@@ -57,7 +70,7 @@ class BackupSyncWorker(context: Context, params: WorkerParameters) : CoroutineWo
             WorkManager.getInstance(context).enqueueUniqueWork(
                 AFTER_CHANGE_WORK_NAME,
                 ExistingWorkPolicy.REPLACE,
-                OneTimeWorkRequestBuilder<BackupSyncWorker>().build()
+                OneTimeWorkRequestBuilder<BackupSyncWorker>().setConstraints(constraints(context)).build()
             )
         }
 
@@ -67,7 +80,9 @@ class BackupSyncWorker(context: Context, params: WorkerParameters) : CoroutineWo
          * restarted, so the daily cadence doesn't reset each launch.
          */
         fun scheduleDaily(context: Context) {
-            val request = PeriodicWorkRequestBuilder<BackupSyncWorker>(1, TimeUnit.DAYS).build()
+            val request = PeriodicWorkRequestBuilder<BackupSyncWorker>(1, TimeUnit.DAYS)
+                .setConstraints(constraints(context))
+                .build()
             WorkManager.getInstance(context)
                 .enqueueUniquePeriodicWork(DAILY_SYNC_WORK_NAME, ExistingPeriodicWorkPolicy.KEEP, request)
         }

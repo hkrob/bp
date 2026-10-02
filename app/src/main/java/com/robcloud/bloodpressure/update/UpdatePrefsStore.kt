@@ -1,7 +1,11 @@
 package com.robcloud.bloodpressure.update
 
 import android.content.Context
+import android.content.SharedPreferences
 import androidx.core.content.edit
+import kotlinx.coroutines.channels.awaitClose
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.callbackFlow
 
 private const val PREFS_NAME = "update_prefs"
 private const val KEY_FREQUENCY = "check_frequency"
@@ -44,5 +48,18 @@ class UpdatePrefsStore(context: Context) {
             remove(KEY_LATEST_NOTES)
             remove(KEY_LATEST_SIZE)
         }
+    }
+
+    /**
+     * Emits once on collection and again whenever the cached release changes — including from a
+     * different [UpdatePrefsStore] instance, such as [UpdateCheckWorker]'s. Lets a live
+     * [UpdateViewModel] pick up what a background check found without waiting for the next
+     * foreground check or a process restart.
+     */
+    fun changes(): Flow<Unit> = callbackFlow {
+        val listener = SharedPreferences.OnSharedPreferenceChangeListener { _, _ -> trySend(Unit) }
+        prefs.registerOnSharedPreferenceChangeListener(listener)
+        trySend(Unit)
+        awaitClose { prefs.unregisterOnSharedPreferenceChangeListener(listener) }
     }
 }
