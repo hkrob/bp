@@ -66,6 +66,12 @@ private const val FEEDBACK_EMAIL = "android.bp@robcloud.qzz.io"
 
 /** Newest first; keep the three most recent versions here (older entries drop off). */
 private val CHANGELOG = listOf(
+    "2.9.1" to listOf(
+        "Fixed: a reading Room couldn't recognise — an out-of-band edit, or a database restored from an older or newer version — could crash the app on the Add reading tab, or freeze History and Log. It's now skipped and retried instead, and recovers on its own once fixed.",
+        "Fixed: a reminder could fail to re-arm for the next day if showing its notification ran into an unexpected error.",
+        "Fixed: a cancelled update check or backup sync (e.g. a newer request replacing it) could be mistaken for a failure and retried.",
+        "Various other reliability fixes under the hood."
+    ),
     "2.9.0" to listOf(
         "The home screen widget now shows the reading's category colour and an irregular-heartbeat mark, matching History, the Log and the PDF report.",
         "The shared PDF report's category colours now match the rest of the app exactly.",
@@ -78,9 +84,6 @@ private val CHANGELOG = listOf(
         "The Last reading card has an edge in the colour of the reading's category. After you save a reading, the card briefly glows in that colour.",
         "The History chart draws in from the left when it appears.",
         "The animations are skipped if animations are turned off on your phone."
-    ),
-    "2.7.2" to listOf(
-        "The About tab links to the project's page on GitHub, where you can see the source and releases and report issues."
     ),
 )
 

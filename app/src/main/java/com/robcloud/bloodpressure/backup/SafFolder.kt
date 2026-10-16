@@ -4,6 +4,7 @@ import android.content.ContentResolver
 import android.net.Uri
 import android.provider.DocumentsContract
 import android.provider.DocumentsContract.Document
+import kotlinx.coroutines.delay
 import java.io.IOException
 
 private const val LOADING_RETRY_ATTEMPTS = 4
@@ -29,13 +30,15 @@ internal class SafFolder(
      * short retries and has no match. Many providers (Drive, Dropbox) report the first listing
      * right after this app is granted access as still loading, for a few hundred ms — retrying
      * briefly avoids surfacing that as a sync failure at the exact moment the user picks a folder.
+     * Suspends between retries (rather than blocking the calling thread) so a cancellation — e.g.
+     * a newer [BackupSyncWorker] replacing this one mid-sync — can interrupt the wait promptly.
      */
-    fun find(name: String, directory: Boolean = false): List<Child> {
+    suspend fun find(name: String, directory: Boolean = false): List<Child> {
         repeat(LOADING_RETRY_ATTEMPTS) { attempt ->
             val (children, loading) = list()
             val matches = children.filter { it.name == name && it.isDirectory == directory }
             if (matches.isNotEmpty() || !loading) return matches.sortedBy { it.documentId }
-            if (attempt < LOADING_RETRY_ATTEMPTS - 1) Thread.sleep(LOADING_RETRY_DELAY_MS)
+            if (attempt < LOADING_RETRY_ATTEMPTS - 1) delay(LOADING_RETRY_DELAY_MS)
         }
         throw IOException("The backup folder is still loading from the storage provider — try again shortly")
     }
@@ -61,7 +64,7 @@ internal class SafFolder(
         return child
     }
 
-    fun findOrCreateDirectory(name: String): SafFolder {
+    suspend fun findOrCreateDirectory(name: String): SafFolder {
         val existing = find(name, directory = true).firstOrNull()
         val id = existing?.documentId ?: run {
             val uri = DocumentsContract.createDocument(resolver, documentUri, Document.MIME_TYPE_DIR, name)

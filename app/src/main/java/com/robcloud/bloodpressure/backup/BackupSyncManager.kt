@@ -5,6 +5,7 @@ import androidx.room.withTransaction
 import com.robcloud.bloodpressure.BuildConfig
 import com.robcloud.bloodpressure.data.AppDatabase
 import com.robcloud.bloodpressure.widget.LastReadingWidgetProvider
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -98,8 +99,14 @@ class BackupSyncManager(
 
         val target = existing.firstOrNull()
         if (target != null) {
-            // Best effort: a provider that can't make folders mustn't block the backup itself.
-            runCatching { snapshotIfDue(folder, remoteTexts.first()) }
+            try {
+                // Best effort: a provider that can't make folders mustn't block the backup itself.
+                snapshotIfDue(folder, remoteTexts.first())
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                // Ignored, as above.
+            }
         }
         val csv = Csv.write(readings, notes)
         if (target != null) folder.overwrite(target, csv) else folder.create(FILE_NAME, csv)
@@ -114,7 +121,7 @@ class BackupSyncManager(
      * Once per day, before the first overwrite, copies the backup file as it stood into the
      * snapshots folder, then prunes old snapshots (see [snapshotsToDelete]).
      */
-    private fun snapshotIfDue(folder: SafFolder, previous: String) {
+    private suspend fun snapshotIfDue(folder: SafFolder, previous: String) {
         val today = LocalDate.now()
         if (folderStore.getLastSnapshotDate() == today) return
         val dir = folder.findOrCreateDirectory(SNAPSHOT_DIR)

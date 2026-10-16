@@ -13,6 +13,7 @@ import com.robcloud.bloodpressure.data.BpCategory
 import com.robcloud.bloodpressure.data.Note
 import com.robcloud.bloodpressure.data.NoteType
 import com.robcloud.bloodpressure.data.Reading
+import com.robcloud.bloodpressure.data.recoveringFromBadRows
 import com.robcloud.bloodpressure.ui.validateReading
 import com.robcloud.bloodpressure.ui.validateTakenAt
 import com.robcloud.bloodpressure.widget.LastReadingWidgetProvider
@@ -119,11 +120,18 @@ class CaptureViewModel(
         refreshBackupStatus()
     }
 
+    // Room's enum converters throw on a row this build doesn't recognise, which would otherwise
+    // crash the app on this, the default tab, the moment it queries the latest reading(s) — see
+    // recoveringFromBadRows. No user-facing message here: this screen has no snackbar, and the
+    // same bad row also fails HistoryViewModel's uiState, which does tell the user about it on
+    // the History/Log tabs.
     val lastReading: StateFlow<Reading?> = dao.observeLatest()
+        .recoveringFromBadRows(null) { }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
 
     /** The reading before the latest one, if any — used to show a trend vs. last time. */
     val previousReading: StateFlow<Reading?> = dao.observeLatestTwo()
+        .recoveringFromBadRows(emptyList()) { }
         .map { it.getOrNull(1) }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
 
