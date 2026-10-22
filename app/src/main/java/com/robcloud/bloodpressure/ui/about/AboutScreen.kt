@@ -24,7 +24,10 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -42,11 +45,13 @@ import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.withLink
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.window.Dialog
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.robcloud.bloodpressure.BloodPressureApp
 import com.robcloud.bloodpressure.BuildConfig
 import com.robcloud.bloodpressure.backup.BackupStatus
 import com.robcloud.bloodpressure.backup.status
+import com.robcloud.bloodpressure.ocr.VisionServerStore
 import com.robcloud.bloodpressure.ui.EqualWidthSegmentedRow
 import com.robcloud.bloodpressure.ui.Formatters
 import com.robcloud.bloodpressure.update.UpdateCheckFrequency
@@ -118,6 +123,8 @@ fun AboutScreen(updateViewModel: UpdateViewModel = viewModel()) {
         FeedbackButton()
 
         UpdateSection(updateViewModel)
+
+        ScanServerSection()
 
         Text(
             "A personal blood pressure tracker. Readings and notes are stored on this " +
@@ -381,6 +388,106 @@ private fun UpdateSection(viewModel: UpdateViewModel) {
                         color = MaterialTheme.colorScheme.error
                     )
                     OutlinedButton(onClick = viewModel::check) { Text("Try again") }
+                }
+            }
+        }
+    }
+}
+
+/**
+ * Where the Add reading tab's "Scan reading" photo import sends the photo — a self-hosted vision
+ * model the user runs themselves (see [VisionServerStore]), not a cloud service. Reads the store
+ * directly for the same reason [BackupSection] does: About has no ViewModel of its own and is
+ * recomposed fresh on every visit, so a plain read always reflects the current setting.
+ */
+@Composable
+private fun ScanServerSection() {
+    val context = LocalContext.current
+    val store = remember { VisionServerStore(context) }
+    var config by remember { mutableStateOf(store.config()) }
+    var showDialog by remember { mutableStateOf(false) }
+
+    Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)) {
+        Column(
+            modifier = Modifier.fillMaxWidth().padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(6.dp)
+        ) {
+            Text("Reading scan", style = MaterialTheme.typography.titleMedium)
+            Text(
+                config?.let { "Scanning with \"${it.model}\" at ${it.baseUrl}" }
+                    ?: "Not set up yet — the Add reading tab's Scan button needs a server to send photos to.",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            Text(
+                "Works with any self-hosted server that speaks the OpenAI chat-completions API " +
+                    "with image input — for example Ollama, LM Studio or llama.cpp's server — " +
+                    "running on your own network or device. A photo is sent only to the address " +
+                    "below, never to a third party.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            OutlinedButton(onClick = { showDialog = true }) {
+                Text(if (config == null) "Set up" else "Change")
+            }
+        }
+    }
+
+    if (showDialog) {
+        ScanServerDialog(store = store, onDismiss = { showDialog = false; config = store.config() })
+    }
+}
+
+@Composable
+private fun ScanServerDialog(store: VisionServerStore, onDismiss: () -> Unit) {
+    var baseUrl by remember { mutableStateOf(store.baseUrl) }
+    var model by remember { mutableStateOf(store.model) }
+    var apiKey by remember { mutableStateOf(store.apiKey) }
+
+    Dialog(onDismissRequest = onDismiss) {
+        Surface(shape = MaterialTheme.shapes.large, color = MaterialTheme.colorScheme.surface) {
+            Column(
+                modifier = Modifier.padding(20.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                Text("Reading scan server", style = MaterialTheme.typography.titleLarge)
+                Text(
+                    "An OpenAI-compatible server with a vision model, e.g. Ollama running " +
+                        "qwen2.5vl or llama3.2-vision.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                OutlinedTextField(
+                    value = baseUrl,
+                    onValueChange = { baseUrl = it },
+                    label = { Text("Server URL") },
+                    placeholder = { Text("http://192.168.1.50:11434") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
+                OutlinedTextField(
+                    value = model,
+                    onValueChange = { model = it },
+                    label = { Text("Model name") },
+                    placeholder = { Text("qwen2.5vl") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
+                OutlinedTextField(
+                    value = apiKey,
+                    onValueChange = { apiKey = it },
+                    label = { Text("API key (optional)") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
+                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                    TextButton(onClick = onDismiss) { Text("Cancel") }
+                    TextButton(onClick = {
+                        store.baseUrl = baseUrl
+                        store.model = model
+                        store.apiKey = apiKey
+                        onDismiss()
+                    }) { Text("Save") }
                 }
             }
         }

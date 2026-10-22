@@ -16,6 +16,7 @@ import com.robcloud.bloodpressure.data.NoteType
 import com.robcloud.bloodpressure.data.Reading
 import com.robcloud.bloodpressure.data.recoveringFromBadRows
 import com.robcloud.bloodpressure.ocr.ReadingOcrResult
+import com.robcloud.bloodpressure.ocr.VisionServerNotConfiguredException
 import com.robcloud.bloodpressure.ocr.scanReadingPhoto
 import com.robcloud.bloodpressure.ui.validateReading
 import com.robcloud.bloodpressure.ui.validateTakenAt
@@ -255,8 +256,10 @@ class CaptureViewModel(
         update { it.copy(scanning = true, errorMessage = null) }
         viewModelScope.launch {
             try {
-                val result = withContext(Dispatchers.Default) { scanReadingPhoto(app, uri) }
+                val result = withContext(Dispatchers.IO) { scanReadingPhoto(app, uri) }
                 applyScanResult(result)
+            } catch (e: VisionServerNotConfiguredException) {
+                update { it.copy(errorMessage = e.message) }
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {

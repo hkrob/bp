@@ -11,7 +11,6 @@ workManager = "2.12.0"
 documentfile = "1.1.0"
 kotlinxCoroutines = "1.11.0"
 vico = "3.2.3"
-mlkitTextRecognition = "16.0.1"
 junit = "4.13.2"
 paparazzi = "2.0.0-alpha05"
 
@@ -39,10 +38,6 @@ documentfile = { group = "androidx.documentfile", name = "documentfile", version
 kotlinx-coroutines-android = { group = "org.jetbrains.kotlinx", name = "kotlinx-coroutines-android", version.ref = "kotlinxCoroutines" }
 
 vico-compose-m3 = { group = "com.patrykandpatrick.vico", name = "compose-m3", version.ref = "vico" }
-
-# The "bundled" (not "unbundled"/Play-Services) artifact: the recognition model ships inside the
-# APK, so scanning a reading works offline immediately, with no Play Services or model download.
-mlkit-text-recognition = { group = "com.google.mlkit", name = "text-recognition", version.ref = "mlkitTextRecognition" }
 
 junit = { group = "junit", name = "junit", version.ref = "junit" }
 
