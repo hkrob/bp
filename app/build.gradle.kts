@@ -112,6 +112,8 @@ dependencies {
 
     implementation(libs.documentfile)
 
+    implementation(libs.exifinterface)
+
     implementation(libs.kotlinx.coroutines.android)
 
     implementation(libs.vico.compose.m3)

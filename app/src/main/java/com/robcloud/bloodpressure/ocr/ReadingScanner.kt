@@ -1,19 +1,34 @@
 package com.robcloud.bloodpressure.ocr
 
 import android.content.Context
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
+import android.graphics.Matrix
 import android.net.Uri
 import android.util.Base64
 import androidx.core.content.FileProvider
+import androidx.exifinterface.media.ExifInterface
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.json.JSONArray
 import org.json.JSONObject
+import java.io.ByteArrayInputStream
+import java.io.ByteArrayOutputStream
 import java.io.File
 import java.io.IOException
 import java.net.HttpURLConnection
 import java.net.URL
 
 private const val TIMEOUT_MS = 30_000
+
+// Most vision models cap their effective input resolution well below a modern phone photo (the
+// sample this was built against was 2129x2501) and resize down to it internally regardless — so
+// sending the original mostly just costs upload time and server-side decode work. 1568px on the
+// long edge is the point past which several vision model vendors (Claude's own docs among them)
+// document no further accuracy gain; this task needs the detail a too-aggressive downscale would
+// lose (see ReadingOcr.kt's history), so this stays well above a "minimum size" crop.
+private const val MAX_EDGE_PX = 1568
+private const val JPEG_QUALITY = 90
 
 private const val SCAN_PROMPT =
     "This photo shows a blood pressure monitor's display. Reply with ONLY three numbers " +
@@ -50,8 +65,7 @@ fun newOcrPhotoUri(context: Context): Uri {
  */
 suspend fun scanReadingPhoto(context: Context, uri: Uri): ReadingOcrResult = withContext(Dispatchers.IO) {
     val config = VisionServerStore(context).config() ?: throw VisionServerNotConfiguredException()
-    val imageBytes = context.contentResolver.openInputStream(uri)?.use { it.readBytes() }
-        ?: throw IOException("Could not read the photo")
+    val imageBytes = preparePhotoBytes(context, uri)
     val dataUrl = "data:image/jpeg;base64," + Base64.encodeToString(imageBytes, Base64.NO_WRAP)
 
     val requestBody = JSONObject().apply {
@@ -101,4 +115,54 @@ suspend fun scanReadingPhoto(context: Context, uri: Uri): ReadingOcrResult = wit
     } finally {
         conn.disconnect()
     }
+}
+
+/**
+ * Reads the photo at [uri], corrects it to upright (a photo taken in portrait is commonly stored
+ * as landscape pixels plus an EXIF rotation tag — sending it as-is could mean the model sees it
+ * sideways), downscales it to [MAX_EDGE_PX] if it's larger, and re-encodes as JPEG. Decoding a
+ * whole [Bitmap] isn't unit-testable without Robolectric; [scaledSize] is, and holds the actual
+ * sizing decision.
+ */
+private fun preparePhotoBytes(context: Context, uri: Uri): ByteArray {
+    val rawBytes = context.contentResolver.openInputStream(uri)?.use { it.readBytes() }
+        ?: throw IOException("Could not read the photo")
+    val orientation = ByteArrayInputStream(rawBytes).use {
+        ExifInterface(it).getAttributeInt(ExifInterface.TAG_ORIENTATION, ExifInterface.ORIENTATION_NORMAL)
+    }
+    val decoded = BitmapFactory.decodeByteArray(rawBytes, 0, rawBytes.size)
+        ?: throw IOException("Could not decode the photo")
+    val upright = rotateForExifOrientation(decoded, orientation)
+    val (targetWidth, targetHeight) = scaledSize(upright.width, upright.height, MAX_EDGE_PX)
+    val resized = if (targetWidth == upright.width && targetHeight == upright.height) {
+        upright
+    } else {
+        Bitmap.createScaledBitmap(upright, targetWidth, targetHeight, true)
+    }
+    return ByteArrayOutputStream().use { out ->
+        resized.compress(Bitmap.CompressFormat.JPEG, JPEG_QUALITY, out)
+        out.toByteArray()
+    }
+}
+
+private fun rotateForExifOrientation(bitmap: Bitmap, orientation: Int): Bitmap {
+    val degrees = when (orientation) {
+        ExifInterface.ORIENTATION_ROTATE_90 -> 90f
+        ExifInterface.ORIENTATION_ROTATE_180 -> 180f
+        ExifInterface.ORIENTATION_ROTATE_270 -> 270f
+        else -> return bitmap
+    }
+    val matrix = Matrix().apply { postRotate(degrees) }
+    return Bitmap.createBitmap(bitmap, 0, 0, bitmap.width, bitmap.height, matrix, true)
+}
+
+/**
+ * [width]x[height] scaled down to fit within [maxEdge] on its longer side, preserving aspect
+ * ratio — or unchanged if already within it. Never upscales.
+ */
+internal fun scaledSize(width: Int, height: Int, maxEdge: Int): Pair<Int, Int> {
+    val longest = maxOf(width, height)
+    if (longest <= maxEdge) return width to height
+    val scale = maxEdge.toDouble() / longest
+    return (width * scale).toInt().coerceAtLeast(1) to (height * scale).toInt().coerceAtLeast(1)
 }
