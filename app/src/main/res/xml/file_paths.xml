@@ -4,4 +4,6 @@
     <cache-path name="reports" path="reports/" />
     <!-- Downloaded update APKs live in cacheDir/updates and are handed to the system installer. -->
     <cache-path name="updates" path="updates/" />
+    <!-- A photo taken to scan a reading (see ocr/) lives in cacheDir/ocr while it's recognised. -->
+    <cache-path name="ocr" path="ocr/" />
 </paths>

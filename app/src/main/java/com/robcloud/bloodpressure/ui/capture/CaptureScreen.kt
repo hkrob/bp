@@ -1,5 +1,9 @@
 package com.robcloud.bloodpressure.ui.capture
 
+import android.net.Uri
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.PickVisualMediaRequest
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.tween
@@ -18,14 +22,17 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowDownward
 import androidx.compose.material.icons.filled.ArrowUpward
 import androidx.compose.material.icons.filled.CalendarToday
+import androidx.compose.material.icons.filled.CameraAlt
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.Medication
+import androidx.compose.material.icons.filled.PhotoLibrary
 import androidx.compose.material.icons.filled.Schedule
 import androidx.compose.material.icons.automirrored.filled.TrendingFlat
 import androidx.compose.foundation.selection.toggleable
 import androidx.compose.material3.Card
 import androidx.compose.material3.Checkbox
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.ui.semantics.Role
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -74,6 +81,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.robcloud.bloodpressure.data.Arm
 import com.robcloud.bloodpressure.data.Reading
 import com.robcloud.bloodpressure.data.bpCategory
+import com.robcloud.bloodpressure.ocr.newOcrPhotoUri
 import com.robcloud.bloodpressure.ui.DIASTOLIC_MAX
 import com.robcloud.bloodpressure.ui.EqualWidthSegmentedRow
 import com.robcloud.bloodpressure.ui.Formatters
@@ -110,6 +118,16 @@ fun CaptureScreen(
     val diastolicFocus = remember { FocusRequester() }
     val heartRateFocus = remember { FocusRequester() }
 
+    // Holds the Uri the camera was asked to write to, between launching it and getting the
+    // success/failure callback — TakePicture() doesn't hand the Uri back itself.
+    var pendingPhotoUri by remember { mutableStateOf<Uri?>(null) }
+    val takePhotoLauncher = rememberLauncherForActivityResult(ActivityResultContracts.TakePicture()) { success ->
+        if (success) pendingPhotoUri?.let(viewModel::scanReading)
+    }
+    val pickPhotoLauncher = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri ->
+        uri?.let(viewModel::scanReading)
+    }
+
     // Flags are consumed before the snackbar shows: showSnackbar suspends until it is dismissed,
     // and leaving the tab meanwhile would otherwise replay the haptic and message on return.
     // Collected in Unit-keyed effects — an effect keyed on the flag would be cancelled, snackbar
@@ -128,6 +146,13 @@ fun CaptureScreen(
             viewModel.consumeMedicationSavedFlag()
             haptics.performHapticFeedback(HapticFeedbackType.LongPress)
             snackbarHostState.showSnackbar("Medication taken noted")
+        }
+    }
+
+    LaunchedEffect(Unit) {
+        viewModel.uiState.map { it.scanFilled }.distinctUntilChanged().filter { it }.collect {
+            viewModel.consumeScanFilledFlag()
+            snackbarHostState.showSnackbar("Filled from photo — check the numbers before saving")
         }
     }
 
@@ -173,6 +198,18 @@ fun CaptureScreen(
             Text(
                 text = "New reading",
                 style = MaterialTheme.typography.headlineMedium
+            )
+
+            ScanReadingRow(
+                scanning = state.scanning,
+                onTakePhoto = {
+                    val uri = newOcrPhotoUri(context)
+                    pendingPhotoUri = uri
+                    takePhotoLauncher.launch(uri)
+                },
+                onPickPhoto = {
+                    pickPhotoLauncher.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
+                }
             )
 
             Row(
@@ -318,6 +355,31 @@ fun CaptureScreen(
 
         SnackbarHost(hostState = snackbarHostState) { data ->
             Snackbar(modifier = Modifier.padding(16.dp)) { Text(data.visuals.message) }
+        }
+    }
+}
+
+/**
+ * Scans a monitor's display with the camera, or from an existing photo, and fills in the
+ * systolic/diastolic/heart rate fields from whatever it can read — a best-effort guess the user
+ * still has to check, not an auto-fill they can trust blindly (see [CaptureViewModel.scanReading]).
+ */
+@Composable
+private fun ScanReadingRow(scanning: Boolean, onTakePhoto: () -> Unit, onPickPhoto: () -> Unit, modifier: Modifier = Modifier) {
+    Row(
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        modifier = modifier.fillMaxWidth()
+    ) {
+        OutlinedButton(onClick = onTakePhoto, enabled = !scanning, modifier = Modifier.weight(1f)) {
+            Icon(Icons.Filled.CameraAlt, contentDescription = null, modifier = Modifier.padding(end = 8.dp))
+            Text("Scan reading")
+        }
+        OutlinedButton(onClick = onPickPhoto, enabled = !scanning) {
+            Icon(Icons.Filled.PhotoLibrary, contentDescription = "Choose a photo instead")
+        }
+        if (scanning) {
+            CircularProgressIndicator(modifier = Modifier.size(24.dp), strokeWidth = 2.dp)
         }
     }
 }
