@@ -81,6 +81,8 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.robcloud.bloodpressure.data.Arm
 import com.robcloud.bloodpressure.data.Reading
 import com.robcloud.bloodpressure.data.bpCategory
+import com.robcloud.bloodpressure.ocr.ScanStage
+import com.robcloud.bloodpressure.ocr.VisionServerStore
 import com.robcloud.bloodpressure.ocr.newOcrPhotoUri
 import com.robcloud.bloodpressure.ui.DIASTOLIC_MAX
 import com.robcloud.bloodpressure.ui.EqualWidthSegmentedRow
@@ -104,6 +106,7 @@ fun CaptureScreen(
     updateViewModel: UpdateViewModel = viewModel()
 ) {
     val state by viewModel.uiState.collectAsState()
+    val scanStage by viewModel.scanStage.collectAsState()
     val lastReading by viewModel.lastReading.collectAsState()
     val previousReading by viewModel.previousReading.collectAsState()
     val cachedRelease by updateViewModel.cachedRelease.collectAsState()
@@ -126,6 +129,22 @@ fun CaptureScreen(
     }
     val pickPhotoLauncher = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri ->
         uri?.let(viewModel::scanReading)
+    }
+    // Read-only, for display in the progress row — the model name is already configured; this
+    // isn't the source of truth for whether scanning is available (scanAvailable is).
+    val scanServerModel = remember { VisionServerStore(context) }.model
+
+    // Counts up once a second while actually waiting on the model (by far the slowest, most
+    // variable part), so a slow self-hosted model reads as "still working", not "stuck".
+    var waitingSeconds by remember { mutableIntStateOf(0) }
+    LaunchedEffect(scanStage) {
+        waitingSeconds = 0
+        if (scanStage == ScanStage.WAITING_FOR_REPLY) {
+            while (true) {
+                delay(1_000)
+                waitingSeconds++
+            }
+        }
     }
 
     // Flags are consumed before the snackbar shows: showSnackbar suspends until it is dismissed,
@@ -170,6 +189,7 @@ fun CaptureScreen(
             if (event == Lifecycle.Event.ON_RESUME) {
                 viewModel.refreshTakenAt()
                 viewModel.refreshBackupStatus()
+                viewModel.refreshScanAvailability()
             }
         }
         lifecycleOwner.lifecycle.addObserver(observer)
@@ -200,17 +220,24 @@ fun CaptureScreen(
                 style = MaterialTheme.typography.headlineMedium
             )
 
-            ScanReadingRow(
-                scanning = state.scanning,
-                onTakePhoto = {
-                    val uri = newOcrPhotoUri(context)
-                    pendingPhotoUri = uri
-                    takePhotoLauncher.launch(uri)
-                },
-                onPickPhoto = {
-                    pickPhotoLauncher.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
+            // Hidden until a scan server is set up (About tab) — showing a button that can only
+            // ever error with "set up a scan server first" isn't worth the space on this form.
+            if (state.scanAvailable) {
+                ScanReadingRow(
+                    scanning = scanStage != null,
+                    onTakePhoto = {
+                        val uri = newOcrPhotoUri(context)
+                        pendingPhotoUri = uri
+                        takePhotoLauncher.launch(uri)
+                    },
+                    onPickPhoto = {
+                        pickPhotoLauncher.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
+                    }
+                )
+                scanStage?.let { stage ->
+                    ScanProgressRow(stage = stage, model = scanServerModel, waitingSeconds = waitingSeconds)
                 }
-            )
+            }
 
             Row(
                 horizontalArrangement = Arrangement.spacedBy(12.dp),
@@ -378,9 +405,32 @@ private fun ScanReadingRow(scanning: Boolean, onTakePhoto: () -> Unit, onPickPho
         OutlinedButton(onClick = onPickPhoto, enabled = !scanning) {
             Icon(Icons.Filled.PhotoLibrary, contentDescription = "Choose a photo instead")
         }
-        if (scanning) {
-            CircularProgressIndicator(modifier = Modifier.size(24.dp), strokeWidth = 2.dp)
-        }
+    }
+}
+
+/**
+ * What [CaptureViewModel.scanReading] is doing right now, spelled out — a self-hosted model can
+ * take anywhere from a couple of seconds to the better part of a minute, and the biggest risk to
+ * trust in a background feature like this is it going quiet while working. [model] is shown as
+ * configured (not validated here); [waitingSeconds] only counts up during [ScanStage.WAITING_FOR_REPLY].
+ */
+@Composable
+private fun ScanProgressRow(stage: ScanStage, model: String, waitingSeconds: Int, modifier: Modifier = Modifier) {
+    Row(
+        horizontalArrangement = Arrangement.spacedBy(10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        modifier = modifier.fillMaxWidth()
+    ) {
+        CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
+        Text(
+            when (stage) {
+                ScanStage.PREPARING_PHOTO -> "Preparing the photo…"
+                ScanStage.SENDING -> "Sending to \"$model\"…"
+                ScanStage.WAITING_FOR_REPLY -> "Waiting for \"$model\"… ${waitingSeconds}s"
+            },
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
     }
 }
 
