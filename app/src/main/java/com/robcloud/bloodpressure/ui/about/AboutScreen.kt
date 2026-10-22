@@ -71,6 +71,9 @@ private const val FEEDBACK_EMAIL = "android.bp@robcloud.qzz.io"
 
 /** Newest first; keep the three most recent versions here (older entries drop off). */
 private val CHANGELOG = listOf(
+    "2.10.1" to listOf(
+        "Fixed: the reading-scan server URL rejected a trailing \"/v1\" (the form Ollama and LM Studio both document as their own base URL), sending a duplicated path and getting a 404. Either form now works.",
+    ),
     "2.10.0" to listOf(
         "New: scan a reading from a photo of your monitor's display. Needs a self-hosted vision model (set up from the \"Reading scan\" card below) — the photo is sent only to the address you set there. Always shown for you to check before saving, never saved automatically.",
         "Fixed: a reading Room couldn't recognise — an out-of-band edit, or a database restored from an older or newer version — could crash the app on the Add reading tab, or freeze History and Log. It's now skipped and retried instead, and recovers on its own once fixed.",
@@ -85,11 +88,6 @@ private val CHANGELOG = listOf(
         "Fixed: picking a new cloud backup folder could show a failure message when the provider just needed a moment to load after being granted access.",
         "The update banner now reflects a background check (or a newly installed update) without needing to reopen the app.",
         "Various other reliability fixes under the hood."
-    ),
-    "2.8.0" to listOf(
-        "The Last reading card has an edge in the colour of the reading's category. After you save a reading, the card briefly glows in that colour.",
-        "The History chart draws in from the left when it appears.",
-        "The animations are skipped if animations are turned off on your phone."
     ),
 )
 
