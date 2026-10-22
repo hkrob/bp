@@ -16,7 +16,9 @@ import com.robcloud.bloodpressure.data.NoteType
 import com.robcloud.bloodpressure.data.Reading
 import com.robcloud.bloodpressure.data.recoveringFromBadRows
 import com.robcloud.bloodpressure.ocr.ReadingOcrResult
+import com.robcloud.bloodpressure.ocr.ScanStage
 import com.robcloud.bloodpressure.ocr.VisionServerNotConfiguredException
+import com.robcloud.bloodpressure.ocr.VisionServerStore
 import com.robcloud.bloodpressure.ocr.scanReadingPhoto
 import com.robcloud.bloodpressure.ui.validateReading
 import com.robcloud.bloodpressure.ui.validateTakenAt
@@ -50,8 +52,8 @@ data class CaptureUiState(
     val errorMessage: String? = null,
     val justSaved: Boolean = false,
     val medicationSaved: Boolean = false,
-    /** True while a scanned photo is being recognised — disables the scan buttons meanwhile. */
-    val scanning: Boolean = false,
+    /** Whether a scan server is configured — the screen hides the scan buttons until it is. */
+    val scanAvailable: Boolean = false,
     /** One-shot: a scan just filled in one or more fields, which the screen should call out. */
     val scanFilled: Boolean = false,
     /** "sys/dia" of a just-saved reading in the hypertensive-crisis range, for the advisory dialog. */
@@ -128,7 +130,15 @@ class CaptureViewModel(
 
     init {
         refreshBackupStatus()
+        refreshScanAvailability()
     }
+
+    // Separate from CaptureUiState/SavedStateHandle: this changes rapidly, is reported from
+    // scanReadingPhoto's background thread (see scanReading below), and a scan interrupted by
+    // process death should just be abandoned on restart, not resumed — so it has no business
+    // going through update()'s SavedStateHandle write on every change.
+    private val _scanStage = MutableStateFlow<ScanStage?>(null)
+    val scanStage: StateFlow<ScanStage?> = _scanStage.asStateFlow()
 
     // Room's enum converters throw on a row this build doesn't recognise, which would otherwise
     // crash the app on this, the default tab, the moment it queries the latest reading(s) — see
@@ -169,6 +179,11 @@ class CaptureViewModel(
             }
             update { it.copy(backupBanner = banner) }
         }
+    }
+
+    /** Call whenever the scan server setting might have changed (e.g. returning from About). */
+    fun refreshScanAvailability() {
+        update { it.copy(scanAvailable = VisionServerStore(app).config() != null) }
     }
 
     fun save() {
@@ -253,10 +268,11 @@ class CaptureViewModel(
     fun scanReading(uri: Uri) {
         if (scanningReading) return
         scanningReading = true
-        update { it.copy(scanning = true, errorMessage = null) }
+        _scanStage.value = ScanStage.PREPARING_PHOTO
+        update { it.copy(errorMessage = null) }
         viewModelScope.launch {
             try {
-                val result = withContext(Dispatchers.IO) { scanReadingPhoto(app, uri) }
+                val result = scanReadingPhoto(app, uri) { stage -> _scanStage.value = stage }
                 applyScanResult(result)
             } catch (e: VisionServerNotConfiguredException) {
                 update { it.copy(errorMessage = e.message) }
@@ -266,7 +282,7 @@ class CaptureViewModel(
                 update { it.copy(errorMessage = "Couldn't read that photo: ${e.message ?: e.javaClass.simpleName}") }
             } finally {
                 scanningReading = false
-                update { it.copy(scanning = false) }
+                _scanStage.value = null
             }
         }
     }

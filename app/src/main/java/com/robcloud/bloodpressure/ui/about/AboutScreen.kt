@@ -71,6 +71,10 @@ private const val FEEDBACK_EMAIL = "android.bp@robcloud.qzz.io"
 
 /** Newest first; keep the three most recent versions here (older entries drop off). */
 private val CHANGELOG = listOf(
+    "2.10.2" to listOf(
+        "The Add reading tab's Scan button is now hidden until a scan server is set up on the About tab, instead of always showing and erroring if you tapped it first.",
+        "Scanning now shows what it's doing — preparing the photo, sending it, then waiting for the model, with a running count of seconds — instead of a single small spinner.",
+    ),
     "2.10.1" to listOf(
         "Fixed: the reading-scan server URL rejected a trailing \"/v1\" (the form Ollama and LM Studio both document as their own base URL), sending a duplicated path and getting a 404. Either form now works.",
     ),
@@ -79,14 +83,6 @@ private val CHANGELOG = listOf(
         "Fixed: a reading Room couldn't recognise — an out-of-band edit, or a database restored from an older or newer version — could crash the app on the Add reading tab, or freeze History and Log. It's now skipped and retried instead, and recovers on its own once fixed.",
         "Fixed: a reminder could fail to re-arm for the next day if showing its notification ran into an unexpected error.",
         "Fixed: a cancelled update check or backup sync (e.g. a newer request replacing it) could be mistaken for a failure and retried.",
-        "Various other reliability fixes under the hood."
-    ),
-    "2.9.0" to listOf(
-        "The home screen widget now shows the reading's category colour and an irregular-heartbeat mark, matching History, the Log and the PDF report.",
-        "The shared PDF report's category colours now match the rest of the app exactly.",
-        "Fixed: a reminder you'd just turned off could still fire one more time.",
-        "Fixed: picking a new cloud backup folder could show a failure message when the provider just needed a moment to load after being granted access.",
-        "The update banner now reflects a background check (or a newly installed update) without needing to reopen the app.",
         "Various other reliability fixes under the hood."
     ),
 )

@@ -40,6 +40,18 @@ private const val SCAN_PROMPT =
 /** Thrown by [scanReadingPhoto] when no [VisionServerStore] config has been set yet. */
 class VisionServerNotConfiguredException : IOException("Set up a scan server in the About tab first")
 
+/** Where [scanReadingPhoto] is up to, for a progress UI. Reported via its `onStage` callback. */
+enum class ScanStage {
+    /** Decoding, rotating and downscaling the photo — local, usually under a second. */
+    PREPARING_PHOTO,
+
+    /** Writing the request (photo + prompt) to the server. */
+    SENDING,
+
+    /** Request sent; blocked on the model actually running. Usually the slowest part by far. */
+    WAITING_FOR_REPLY
+}
+
 /**
  * A fresh destination for the camera to write a scan photo to (cacheDir/ocr, see file_paths.xml),
  * as a FileProvider content Uri the system camera app can write to without this app granting it
@@ -62,9 +74,19 @@ fun newOcrPhotoUri(context: Context): Uri {
  * On-device recognition (ML Kit's bundled text model) was tried first and dropped: it could not
  * read a real seven-segment LCD monitor display at all in testing — it missed the digits
  * entirely, or misread them as letters — so there was nothing worth keeping on-device for this.
+ *
+ * [onStage] is called from whatever thread each step actually runs on (this function hops to
+ * [Dispatchers.IO] internally) — a plain callback rather than a `Flow`, since the caller only
+ * ever wants "the latest stage", which a thread-safe `StateFlow.value` assignment handles without
+ * needing to be on any particular thread itself.
  */
-suspend fun scanReadingPhoto(context: Context, uri: Uri): ReadingOcrResult = withContext(Dispatchers.IO) {
+suspend fun scanReadingPhoto(
+    context: Context,
+    uri: Uri,
+    onStage: (ScanStage) -> Unit = {}
+): ReadingOcrResult = withContext(Dispatchers.IO) {
     val config = VisionServerStore(context).config() ?: throw VisionServerNotConfiguredException()
+    onStage(ScanStage.PREPARING_PHOTO)
     val imageBytes = preparePhotoBytes(context, uri)
     val dataUrl = "data:image/jpeg;base64," + Base64.encodeToString(imageBytes, Base64.NO_WRAP)
 
@@ -101,7 +123,9 @@ suspend fun scanReadingPhoto(context: Context, uri: Uri): ReadingOcrResult = wit
         readTimeout = TIMEOUT_MS
     }
     try {
+        onStage(ScanStage.SENDING)
         conn.outputStream.use { it.write(requestBody.toString().toByteArray(Charsets.UTF_8)) }
+        onStage(ScanStage.WAITING_FOR_REPLY)
         val code = conn.responseCode
         val responseStream = if (code in 200..299) conn.inputStream else conn.errorStream
         val responseText = responseStream?.bufferedReader()?.use { it.readText() }.orEmpty()

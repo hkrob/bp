@@ -25,8 +25,8 @@ android {
         applicationId = "com.robcloud.bloodpressure"
         minSdk = 26
         targetSdk = 36
-        versionCode = 37
-        versionName = "2.10.1"
+        versionCode = 38
+        versionName = "2.10.2"
 
         buildConfigField(
             "String",
