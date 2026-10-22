@@ -92,7 +92,7 @@ suspend fun scanReadingPhoto(context: Context, uri: Uri): ReadingOcrResult = wit
         )
     }
 
-    val conn = (URL("${config.baseUrl}/v1/chat/completions").openConnection() as HttpURLConnection).apply {
+    val conn = (URL(chatCompletionsUrl(config.baseUrl)).openConnection() as HttpURLConnection).apply {
         requestMethod = "POST"
         doOutput = true
         setRequestProperty("Content-Type", "application/json")
@@ -154,6 +154,20 @@ private fun rotateForExifOrientation(bitmap: Bitmap, orientation: Int): Bitmap {
     }
     val matrix = Matrix().apply { postRotate(degrees) }
     return Bitmap.createBitmap(bitmap, 0, 0, bitmap.width, bitmap.height, matrix, true)
+}
+
+/**
+ * The chat-completions endpoint for [baseUrl], handling either convention a server's "base URL"
+ * might mean: some (Ollama, LM Studio) document theirs already including "/v1"; a bare host:port
+ * is just as reasonable a thing to type into the settings field. Ensures "/v1" appears exactly
+ * once either way, so "http://host:11434" and "http://host:11434/v1" both resolve to the same
+ * request — entering the field either way (as a user did, triggering a 404 from the duplicated
+ * "/v1/v1" the old unconditional-append version produced) now works.
+ */
+internal fun chatCompletionsUrl(baseUrl: String): String {
+    val trimmed = baseUrl.trim().trimEnd('/')
+    val withV1 = if (trimmed.endsWith("/v1", ignoreCase = true)) trimmed else "$trimmed/v1"
+    return "$withV1/chat/completions"
 }
 
 /**
