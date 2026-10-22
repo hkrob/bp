@@ -4,6 +4,7 @@ import android.content.Context
 import androidx.work.CoroutineWorker
 import androidx.work.WorkerParameters
 import com.robcloud.bloodpressure.BuildConfig
+import kotlinx.coroutines.CancellationException
 
 private const val MAX_ATTEMPTS = 3
 
@@ -22,6 +23,8 @@ class UpdateCheckWorker(context: Context, params: WorkerParameters) : CoroutineW
             // GitHub answered with an error (usually its rate limit): retrying soon only spends
             // more of the shared limit, so wait for the next scheduled check.
             Result.success()
+        } catch (e: CancellationException) {
+            throw e // WorkManager cancelled this run (constraints changed, rescheduled) — not a failure
         } catch (e: Exception) {
             // A persistent, unexpected failure (e.g. GitHub changing its response shape) shouldn't
             // retry forever via WorkManager's backoff; give up and wait for the next scheduled
