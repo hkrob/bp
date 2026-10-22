@@ -71,7 +71,8 @@ private const val FEEDBACK_EMAIL = "android.bp@robcloud.qzz.io"
 
 /** Newest first; keep the three most recent versions here (older entries drop off). */
 private val CHANGELOG = listOf(
-    "2.9.1" to listOf(
+    "2.10.0" to listOf(
+        "New: scan a reading from a photo of your monitor's display. Needs a self-hosted vision model (set up from the \"Reading scan\" card below) — the photo is sent only to the address you set there. Always shown for you to check before saving, never saved automatically.",
         "Fixed: a reading Room couldn't recognise — an out-of-band edit, or a database restored from an older or newer version — could crash the app on the Add reading tab, or freeze History and Log. It's now skipped and retried instead, and recovers on its own once fixed.",
         "Fixed: a reminder could fail to re-arm for the next day if showing its notification ran into an unexpected error.",
         "Fixed: a cancelled update check or backup sync (e.g. a newer request replacing it) could be mistaken for a failure and retried.",
