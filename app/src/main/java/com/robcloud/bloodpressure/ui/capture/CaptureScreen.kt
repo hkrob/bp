@@ -132,7 +132,7 @@ fun CaptureScreen(
     }
     // Read-only, for display in the progress row — the model name is already configured; this
     // isn't the source of truth for whether scanning is available (scanAvailable is).
-    val scanServerModel = remember { VisionServerStore(context) }.model
+    val scanServerModel = remember { VisionServerStore(context) }.config()?.model ?: ""
 
     // Counts up once a second while actually waiting on the model (by far the slowest, most
     // variable part), so a slow self-hosted model reads as "still working", not "stuck".
