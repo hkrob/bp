@@ -6,19 +6,21 @@ import android.content.Intent
 import android.net.Uri
 import android.os.Build
 import android.widget.Toast
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.selection.selectable
+import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Email
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -40,10 +42,12 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.LinkAnnotation
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.TextLinkStyles
@@ -80,6 +84,14 @@ private const val FEEDBACK_EMAIL = "android.bp@robcloud.qzz.io"
 
 /** Newest first; keep the three most recent versions here (older entries drop off). */
 private val CHANGELOG = listOf(
+    "2.11.1" to listOf(
+        "Deleting a saved scan server now asks first, since it can't be undone — and warns you if it's the active one, since another saved server (possibly a cloud one) would silently take over.",
+        "Added a warning when a saved server's address isn't encrypted (http, not https) and has an API key set — that key would otherwise be sent in plain text.",
+        "An existing single scan-server setup from before this version is cleared from disk once it's carried over, instead of being left there indefinitely.",
+        "Fixed: a corrupted saved server could make every other saved server disappear the next time any of them changed.",
+        "Fixed: the \"Add a server\" dialog could lose everything typed into it if the app was interrupted while you were away copying an API key.",
+        "Various other reliability fixes under the hood.",
+    ),
     "2.11.0" to listOf(
         "New: save more than one reading-scan server and switch between them — e.g. a self-hosted model at home and a cloud provider's free tier for when you're out. Set up from the About tab's \"Reading scan\" card.",
         "An existing single scan-server setup carries over automatically as your first saved server.",
@@ -87,9 +99,6 @@ private val CHANGELOG = listOf(
     "2.10.2" to listOf(
         "The Add reading tab's Scan button is now hidden until a scan server is set up on the About tab, instead of always showing and erroring if you tapped it first.",
         "Scanning now shows what it's doing — preparing the photo, sending it, then waiting for the model, with a running count of seconds — instead of a single small spinner.",
-    ),
-    "2.10.1" to listOf(
-        "Fixed: the reading-scan server URL rejected a trailing \"/v1\" (the form Ollama and LM Studio both document as their own base URL), sending a duplicated path and getting a 404. Either form now works.",
     ),
 )
 
@@ -407,13 +416,17 @@ private fun ScanServerSection() {
     val context = LocalContext.current
     val store = remember { VisionServerStore(context) }
     var profiles by remember { mutableStateOf(store.profiles()) }
-    var activeId by remember { mutableStateOf(store.activeProfileId) }
-    var editing by remember { mutableStateOf<VisionServerProfile?>(null) }
-    var adding by remember { mutableStateOf(false) }
+    // activeProfile(), not the raw activeProfileId: a stale selection (pointing at an id no
+    // longer in the list) self-heals there, and reading it this way — not just when a scan runs
+    // — is what makes that correction show up here instead of leaving every radio unselected.
+    var activeId by remember { mutableStateOf(store.activeProfile()?.id) }
+    var editingId by rememberSaveable { mutableStateOf<String?>(null) }
+    var adding by rememberSaveable { mutableStateOf(false) }
+    var deleting by remember { mutableStateOf<VisionServerProfile?>(null) }
 
     fun refresh() {
         profiles = store.profiles()
-        activeId = store.activeProfileId
+        activeId = store.activeProfile()?.id
     }
 
     Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)) {
@@ -436,14 +449,20 @@ private fun ScanServerSection() {
                     style = MaterialTheme.typography.bodyMedium
                 )
             } else {
-                Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                // selectableGroup(): with the per-row selectable() below (not a plain clickable),
+                // this is what lets TalkBack announce the set as "radio button, N of M" instead
+                // of N separate unlabelled stops — see ScanServerRow.
+                Column(
+                    verticalArrangement = Arrangement.spacedBy(2.dp),
+                    modifier = Modifier.selectableGroup()
+                ) {
                     profiles.forEach { profile ->
                         ScanServerRow(
                             profile = profile,
                             selected = profile.id == activeId,
                             onSelect = { store.activeProfileId = profile.id; refresh() },
-                            onEdit = { editing = profile },
-                            onDelete = { store.deleteProfile(profile.id); refresh() }
+                            onEdit = { editingId = profile.id },
+                            onDelete = { deleting = profile }
                         )
                     }
                 }
@@ -462,11 +481,38 @@ private fun ScanServerSection() {
             onDismiss = { adding = false; refresh() }
         )
     }
-    editing?.let { profile ->
+    // Looked up by id each recomposition, not held as the profile itself: a data class isn't
+    // rememberSaveable without a custom Saver, and the id is all that needs to survive a process
+    // death or rotation while the dialog is open (see ScanServerDialog for why that matters here).
+    profiles.find { it.id == editingId }?.let { profile ->
         ScanServerDialog(
             initial = profile,
             onSave = store::upsertProfile,
-            onDismiss = { editing = null; refresh() }
+            onDismiss = { editingId = null; refresh() }
+        )
+    }
+    deleting?.let { profile ->
+        AlertDialog(
+            onDismissRequest = { deleting = null },
+            title = { Text("Delete \"${profile.name}\"?") },
+            text = {
+                Text(
+                    if (profile.id == activeId) {
+                        "It's the active server — scanning will switch to another saved one, " +
+                            "or stop being available if this was the last one."
+                    } else {
+                        "This can't be undone."
+                    }
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = { store.deleteProfile(profile.id); deleting = null; refresh() }) {
+                    Text("Delete", color = MaterialTheme.colorScheme.error)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { deleting = null }) { Text("Cancel") }
+            }
         )
     }
 }
@@ -482,10 +528,13 @@ private fun ScanServerRow(
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .clickable(onClick = onSelect),
+            .selectable(selected = selected, role = Role.RadioButton, onClick = onSelect),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        RadioButton(selected = selected, onClick = onSelect)
+        // onClick = null: the Row above is the single focus/click target (selectable with a
+        // RadioButton role), so TalkBack gets one stop per server instead of two. Matches
+        // IrregularHeartbeatCheckbox's Checkbox(onCheckedChange = null) for the same reason.
+        RadioButton(selected = selected, onClick = null)
         Column(modifier = Modifier.weight(1f).padding(end = 4.dp)) {
             Text(profile.name, style = MaterialTheme.typography.bodyLarge)
             Text(
@@ -505,14 +554,29 @@ private fun ScanServerRow(
     }
 }
 
-/** [initial] null adds a new profile; non-null edits it in place (same id, pre-filled fields). */
+/**
+ * [initial] null adds a new profile; non-null edits it in place (same id, pre-filled fields).
+ * Fields are rememberSaveable: this is the dialog for the exact flow that's likeliest to get
+ * interrupted — switching away to a browser to copy an API key — so losing what was typed to a
+ * rotation or the system reclaiming the process while away would be a bad way to lose that, same
+ * reasoning as ExportCsvDialog's fields and HistoryScreen/MainActivity's open-dialog flags.
+ */
 @Composable
 private fun ScanServerDialog(initial: VisionServerProfile?, onSave: (VisionServerProfile) -> Unit, onDismiss: () -> Unit) {
-    var name by remember { mutableStateOf(initial?.name ?: "") }
-    var baseUrl by remember { mutableStateOf(initial?.baseUrl ?: "") }
-    var model by remember { mutableStateOf(initial?.model ?: "") }
-    var apiKey by remember { mutableStateOf(initial?.apiKey ?: "") }
-    val canSave = name.isNotBlank() && baseUrl.isNotBlank() && model.isNotBlank()
+    var name by rememberSaveable { mutableStateOf(initial?.name ?: "") }
+    var baseUrl by rememberSaveable { mutableStateOf(initial?.baseUrl ?: "") }
+    var model by rememberSaveable { mutableStateOf(initial?.model ?: "") }
+    var apiKey by rememberSaveable { mutableStateOf(initial?.apiKey ?: "") }
+    // Checked against the same normalisation Save applies (trim + drop a trailing slash), so a
+    // URL that's blank once normalised (e.g. just "/") is rejected here instead of saving as "" —
+    // which would otherwise pass this check, then make the Scan button appear on Add reading only
+    // for every scan to fail with a raw "no protocol" error.
+    val normalizedUrl = baseUrl.trim().trimEnd('/')
+    val canSave = name.isNotBlank() && normalizedUrl.isNotBlank() && model.isNotBlank()
+    // A plain http:// address isn't encrypted — fine for a self-hosted server on a network you
+    // trust, but an API key sent to one would cross the network in the clear. Only worth flagging
+    // once there's a key to protect; a local server with no key has nothing this warning is about.
+    val cleartextKeyWarning = apiKey.isNotBlank() && normalizedUrl.startsWith("http://", ignoreCase = true)
 
     Dialog(onDismissRequest = onDismiss) {
         Surface(shape = MaterialTheme.shapes.large, color = MaterialTheme.colorScheme.surface) {
@@ -564,6 +628,14 @@ private fun ScanServerDialog(initial: VisionServerProfile?, onSave: (VisionServe
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth()
                 )
+                if (cleartextKeyWarning) {
+                    Text(
+                        "This address isn't encrypted (http, not https) — the API key would be " +
+                            "sent in plain text. Only use this on a network you trust.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.error
+                    )
+                }
                 Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
                     TextButton(onClick = onDismiss) { Text("Cancel") }
                     TextButton(
@@ -573,7 +645,7 @@ private fun ScanServerDialog(initial: VisionServerProfile?, onSave: (VisionServe
                                 VisionServerProfile(
                                     id = initial?.id ?: UUID.randomUUID().toString(),
                                     name = name.trim(),
-                                    baseUrl = baseUrl.trim().trimEnd('/'),
+                                    baseUrl = normalizedUrl,
                                     model = model.trim(),
                                     apiKey = apiKey.trim().ifBlank { null }
                                 )

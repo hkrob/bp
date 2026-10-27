@@ -44,4 +44,14 @@ class VisionServerProfilesTest {
     fun `an empty list round-trips`() {
         assertTrue(decodeProfiles(encodeProfiles(emptyList())).isEmpty())
     }
+
+    @Test
+    fun `one corrupted entry is dropped, not every saved profile`() {
+        // The actual regression this guards: a single bad entry (a future format change, a
+        // partial write) used to make decodeProfiles return emptyList() for the whole array —
+        // and the next save would then persist that, destroying every other profile and its key.
+        val good = VisionServerProfile("1", "Good", "http://a", "m", "key-1")
+        val json = """[${encodeProfiles(listOf(good)).removeSurrounding("[", "]")},{"id":"2"}]"""
+        assertEquals(listOf(good), decodeProfiles(json))
+    }
 }

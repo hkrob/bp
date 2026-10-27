@@ -140,6 +140,14 @@ class CaptureViewModel(
     private val _scanStage = MutableStateFlow<ScanStage?>(null)
     val scanStage: StateFlow<ScanStage?> = _scanStage.asStateFlow()
 
+    // Resolved once, when the scan starts — not read live from the store while displayed. The
+    // active profile can change (in About, on another tab) while a scan is still waiting on the
+    // one that was active when it started; showing whichever is active *now* would describe the
+    // wrong server entirely, up to and including showing success/failure against the new one's
+    // name for a request that was actually made — and answered — by the old one.
+    private val _scanningModelName = MutableStateFlow<String?>(null)
+    val scanningModelName: StateFlow<String?> = _scanningModelName.asStateFlow()
+
     // Room's enum converters throw on a row this build doesn't recognise, which would otherwise
     // crash the app on this, the default tab, the moment it queries the latest reading(s) — see
     // recoveringFromBadRows. No user-facing message here: this screen has no snackbar, and the
@@ -268,6 +276,7 @@ class CaptureViewModel(
     fun scanReading(uri: Uri) {
         if (scanningReading) return
         scanningReading = true
+        _scanningModelName.value = VisionServerStore(app).activeProfile()?.model
         _scanStage.value = ScanStage.PREPARING_PHOTO
         update { it.copy(errorMessage = null) }
         viewModelScope.launch {
@@ -283,6 +292,7 @@ class CaptureViewModel(
             } finally {
                 scanningReading = false
                 _scanStage.value = null
+                _scanningModelName.value = null
             }
         }
     }
