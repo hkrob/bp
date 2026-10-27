@@ -82,7 +82,6 @@ import com.robcloud.bloodpressure.data.Arm
 import com.robcloud.bloodpressure.data.Reading
 import com.robcloud.bloodpressure.data.bpCategory
 import com.robcloud.bloodpressure.ocr.ScanStage
-import com.robcloud.bloodpressure.ocr.VisionServerStore
 import com.robcloud.bloodpressure.ocr.newOcrPhotoUri
 import com.robcloud.bloodpressure.ui.DIASTOLIC_MAX
 import com.robcloud.bloodpressure.ui.EqualWidthSegmentedRow
@@ -130,9 +129,10 @@ fun CaptureScreen(
     val pickPhotoLauncher = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri ->
         uri?.let(viewModel::scanReading)
     }
-    // Read-only, for display in the progress row — the model name is already configured; this
-    // isn't the source of truth for whether scanning is available (scanAvailable is).
-    val scanServerModel = remember { VisionServerStore(context) }.config()?.model ?: ""
+    // What CaptureViewModel.scanReading captured as the model name when this scan started — not
+    // re-read live, so switching the active server mid-scan (About tab, another window) can't
+    // make the progress row describe the wrong one (see the ViewModel for why that matters).
+    val scanningModelName by viewModel.scanningModelName.collectAsState()
 
     // Counts up once a second while actually waiting on the model (by far the slowest, most
     // variable part), so a slow self-hosted model reads as "still working", not "stuck".
@@ -235,7 +235,7 @@ fun CaptureScreen(
                     }
                 )
                 scanStage?.let { stage ->
-                    ScanProgressRow(stage = stage, model = scanServerModel, waitingSeconds = waitingSeconds)
+                    ScanProgressRow(stage = stage, model = scanningModelName ?: "", waitingSeconds = waitingSeconds)
                 }
             }
 

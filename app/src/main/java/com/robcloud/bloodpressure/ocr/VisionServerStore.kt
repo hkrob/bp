@@ -11,8 +11,10 @@ private const val KEY_PROFILES = "profiles"
 private const val KEY_ACTIVE_ID = "active_id"
 
 // Single-config keys from before multiple profiles were supported. Read once to migrate an
-// existing setup into a profile (see migrateLegacyIfNeeded); left in place afterward rather than
-// removed — harmless to leave, and deleting old prefs keys has its own failure modes for no gain.
+// existing setup into a profile (see migrateLegacyIfNeeded), then cleared: LEGACY_KEY_API_KEY in
+// particular is a plaintext secret, and leaving it on disk indefinitely after it's already been
+// copied into the migrated profile — including after that profile is itself later edited or
+// deleted — has no upside, unlike the other prefs this app keeps around for good.
 private const val LEGACY_KEY_BASE_URL = "base_url"
 private const val LEGACY_KEY_MODEL = "model"
 private const val LEGACY_KEY_API_KEY = "api_key"
@@ -49,13 +51,14 @@ internal fun encodeProfiles(profiles: List<VisionServerProfile>): String {
     return array.toString()
 }
 
-/** Never throws: a corrupted or unrecognisable value (a future format change, a bad write) is
- *  treated as "no profiles saved" rather than crashing the About tab. */
+/** Never throws, and a corrupted or unrecognisable entry (a future format change, a bad write)
+ *  is dropped on its own rather than discarding every other saved profile along with it — the
+ *  mistake [ReminderStore.decodeTimes] already avoids for the same reason. */
 internal fun decodeProfiles(json: String): List<VisionServerProfile> {
     if (json.isBlank()) return emptyList()
-    return runCatching {
-        val array = JSONArray(json)
-        (0 until array.length()).map { i ->
+    val array = runCatching { JSONArray(json) }.getOrNull() ?: return emptyList()
+    return (0 until array.length()).mapNotNull { i ->
+        runCatching {
             val o = array.getJSONObject(i)
             VisionServerProfile(
                 id = o.getString("id"),
@@ -64,8 +67,8 @@ internal fun decodeProfiles(json: String): List<VisionServerProfile> {
                 model = o.getString("model"),
                 apiKey = if (o.isNull("apiKey")) null else o.getString("apiKey")
             )
-        }
-    }.getOrDefault(emptyList())
+        }.getOrNull()
+    }
 }
 
 /**
@@ -109,10 +112,20 @@ class VisionServerStore(context: Context) {
         get() = prefs.getString(KEY_ACTIVE_ID, null)
         set(value) = prefs.edit { putString(KEY_ACTIVE_ID, value) }
 
-    /** The selected profile, or the first saved one if the selection is unset or stale. */
+    /**
+     * The selected profile, or the first saved one if the selection is unset or stale (pointing
+     * at an id that's no longer in the list — e.g. after the active profile's own entry was
+     * corrupted and dropped by [decodeProfiles]). That fallback is persisted here, not just
+     * returned, so the About tab's radio selection (which compares ids directly) agrees with what
+     * a scan actually uses instead of silently falling out of sync with it.
+     */
     fun activeProfile(): VisionServerProfile? {
         val saved = profiles()
-        return saved.find { it.id == activeProfileId } ?: saved.firstOrNull()
+        val selected = saved.find { it.id == activeProfileId }
+        if (selected != null) return selected
+        val fallback = saved.firstOrNull()
+        activeProfileId = fallback?.id
+        return fallback
     }
 
     /** Null until at least one profile is saved. */
@@ -126,6 +139,7 @@ class VisionServerStore(context: Context) {
         val legacyModel = prefs.getString(LEGACY_KEY_MODEL, null)
         if (legacyUrl.isNullOrBlank() || legacyModel.isNullOrBlank()) {
             saveProfiles(emptyList()) // marks migration done even when there's nothing to bring over
+            clearLegacyKeys()
             return
         }
         val migrated = VisionServerProfile(
@@ -137,5 +151,14 @@ class VisionServerStore(context: Context) {
         )
         saveProfiles(listOf(migrated))
         activeProfileId = migrated.id
+        clearLegacyKeys()
+    }
+
+    private fun clearLegacyKeys() {
+        prefs.edit {
+            remove(LEGACY_KEY_BASE_URL)
+            remove(LEGACY_KEY_MODEL)
+            remove(LEGACY_KEY_API_KEY)
+        }
     }
 }
