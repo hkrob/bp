@@ -39,16 +39,16 @@ class UpdateViewModel(application: Application) : AndroidViewModel(application) 
         viewModelScope.launch {
             store.changes().collect {
                 val cached = store.loadLatestRelease()
-                val newer = cached != null && UpdateManager.isNewer(cached.versionName, BuildConfig.VERSION_NAME)
-                _cachedRelease.value = if (newer) cached else null
-                if (!newer && cached != null) store.clearLatestRelease()
+                val newerRelease = cached?.takeIf { UpdateManager.isNewer(it.versionName, BuildConfig.VERSION_NAME) }
+                _cachedRelease.value = newerRelease
+                if (newerRelease == null && cached != null) store.clearLatestRelease()
                 // Only move into/out of the banner state when nothing else is in progress — a
                 // background write shouldn't interrupt a check/download/install the user started.
                 when (_state.value) {
                     is UpdateUiState.Idle, is UpdateUiState.UpToDate, is UpdateUiState.Available ->
                         // The Add reading banner sends the user here: show the update straight
                         // away rather than an idle "Check for updates" button.
-                        _state.value = if (newer) UpdateUiState.Available(cached!!) else UpdateUiState.Idle
+                        _state.value = if (newerRelease != null) UpdateUiState.Available(newerRelease) else UpdateUiState.Idle
                     else -> Unit
                 }
             }

@@ -1,6 +1,7 @@
 package com.robcloud.bloodpressure.ui.capture
 
 import android.app.Application
+import android.net.Uri
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.viewModelScope
@@ -13,9 +14,16 @@ import com.robcloud.bloodpressure.data.BpCategory
 import com.robcloud.bloodpressure.data.Note
 import com.robcloud.bloodpressure.data.NoteType
 import com.robcloud.bloodpressure.data.Reading
+import com.robcloud.bloodpressure.data.recoveringFromBadRows
+import com.robcloud.bloodpressure.ocr.ReadingOcrResult
+import com.robcloud.bloodpressure.ocr.ScanStage
+import com.robcloud.bloodpressure.ocr.VisionServerNotConfiguredException
+import com.robcloud.bloodpressure.ocr.VisionServerStore
+import com.robcloud.bloodpressure.ocr.scanReadingPhoto
 import com.robcloud.bloodpressure.ui.validateReading
 import com.robcloud.bloodpressure.ui.validateTakenAt
 import com.robcloud.bloodpressure.widget.LastReadingWidgetProvider
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -44,6 +52,10 @@ data class CaptureUiState(
     val errorMessage: String? = null,
     val justSaved: Boolean = false,
     val medicationSaved: Boolean = false,
+    /** Whether a scan server is configured — the screen hides the scan buttons until it is. */
+    val scanAvailable: Boolean = false,
+    /** One-shot: a scan just filled in one or more fields, which the screen should call out. */
+    val scanFilled: Boolean = false,
     /** "sys/dia" of a just-saved reading in the hypertensive-crisis range, for the advisory dialog. */
     val crisisBp: String? = null,
     /** Backup problem to warn about, if any (see [backupBannerMessage]). */
@@ -114,16 +126,40 @@ class CaptureViewModel(
     // Guards against a double tap inserting the same reading twice while the first insert runs.
     private var savingReading = false
     private var savingMedication = false
+    private var scanningReading = false
 
     init {
         refreshBackupStatus()
+        refreshScanAvailability()
     }
 
+    // Separate from CaptureUiState/SavedStateHandle: this changes rapidly, is reported from
+    // scanReadingPhoto's background thread (see scanReading below), and a scan interrupted by
+    // process death should just be abandoned on restart, not resumed — so it has no business
+    // going through update()'s SavedStateHandle write on every change.
+    private val _scanStage = MutableStateFlow<ScanStage?>(null)
+    val scanStage: StateFlow<ScanStage?> = _scanStage.asStateFlow()
+
+    // Resolved once, when the scan starts — not read live from the store while displayed. The
+    // active profile can change (in About, on another tab) while a scan is still waiting on the
+    // one that was active when it started; showing whichever is active *now* would describe the
+    // wrong server entirely, up to and including showing success/failure against the new one's
+    // name for a request that was actually made — and answered — by the old one.
+    private val _scanningModelName = MutableStateFlow<String?>(null)
+    val scanningModelName: StateFlow<String?> = _scanningModelName.asStateFlow()
+
+    // Room's enum converters throw on a row this build doesn't recognise, which would otherwise
+    // crash the app on this, the default tab, the moment it queries the latest reading(s) — see
+    // recoveringFromBadRows. No user-facing message here: this screen has no snackbar, and the
+    // same bad row also fails HistoryViewModel's uiState, which does tell the user about it on
+    // the History/Log tabs.
     val lastReading: StateFlow<Reading?> = dao.observeLatest()
+        .recoveringFromBadRows(null) { }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
 
     /** The reading before the latest one, if any — used to show a trend vs. last time. */
     val previousReading: StateFlow<Reading?> = dao.observeLatestTwo()
+        .recoveringFromBadRows(emptyList()) { }
         .map { it.getOrNull(1) }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
 
@@ -151,6 +187,11 @@ class CaptureViewModel(
             }
             update { it.copy(backupBanner = banner) }
         }
+    }
+
+    /** Call whenever the scan server setting might have changed (e.g. returning from About). */
+    fun refreshScanAvailability() {
+        update { it.copy(scanAvailable = VisionServerStore(app).config() != null) }
     }
 
     fun save() {
@@ -224,6 +265,54 @@ class CaptureViewModel(
             }
         }
     }
+
+    /**
+     * Reads a photo of a monitor's display (just taken, or picked from the gallery) and fills in
+     * whatever fields [scanReadingPhoto] could make out, for the user to check before saving —
+     * it never saves by itself. Existing field values are kept where the scan found nothing for
+     * them, so a reading that's already half-typed isn't wiped by a scan that only reads part of
+     * the display.
+     */
+    fun scanReading(uri: Uri) {
+        if (scanningReading) return
+        scanningReading = true
+        _scanningModelName.value = VisionServerStore(app).activeProfile()?.model
+        _scanStage.value = ScanStage.PREPARING_PHOTO
+        update { it.copy(errorMessage = null) }
+        viewModelScope.launch {
+            try {
+                val result = scanReadingPhoto(app, uri) { stage -> _scanStage.value = stage }
+                applyScanResult(result)
+            } catch (e: VisionServerNotConfiguredException) {
+                update { it.copy(errorMessage = e.message) }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                update { it.copy(errorMessage = "Couldn't read that photo: ${e.message ?: e.javaClass.simpleName}") }
+            } finally {
+                scanningReading = false
+                _scanStage.value = null
+                _scanningModelName.value = null
+            }
+        }
+    }
+
+    private fun applyScanResult(result: ReadingOcrResult) {
+        if (result.isEmpty) {
+            update { it.copy(errorMessage = "Couldn't read numbers from that photo — enter them manually") }
+            return
+        }
+        update {
+            it.copy(
+                systolic = result.systolic?.toString() ?: it.systolic,
+                diastolic = result.diastolic?.toString() ?: it.diastolic,
+                heartRate = result.heartRate?.toString() ?: it.heartRate,
+                scanFilled = true
+            )
+        }
+    }
+
+    fun consumeScanFilledFlag() = update { it.copy(scanFilled = false) }
 
     fun consumeSavedFlag() = update { it.copy(justSaved = false) }
 

@@ -17,6 +17,7 @@ import com.robcloud.bloodpressure.backup.unreadableRowsNotice
 import com.robcloud.bloodpressure.data.Note
 import com.robcloud.bloodpressure.data.NoteType
 import com.robcloud.bloodpressure.data.Reading
+import com.robcloud.bloodpressure.data.recoveringFromBadRows
 import com.robcloud.bloodpressure.report.ReportPdf
 import com.robcloud.bloodpressure.widget.LastReadingWidgetProvider
 import kotlinx.coroutines.CancellationException
@@ -24,7 +25,6 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.map
@@ -89,7 +89,20 @@ class HistoryViewModel(application: Application) : AndroidViewModel(application)
     val pendingReportShare = MutableStateFlow<Uri?>(null)
 
     val uiState: StateFlow<HistoryUiState> =
-        combine(dao.observeAll(), noteDao.observeAll(), period, syncing, backupStatus) { readings, notes, period, syncing, backup ->
+        combine(
+            // Room's enum converters (Arm/NoteType) throw if a row holds a value the current
+            // build doesn't recognise (an out-of-band edit, or a restored older/newer database).
+            // That ends Room's underlying Flow for good, not just the one bad emission, so each
+            // source retries on its own below rather than relying on a `.catch` after `combine`
+            // (which can't resume a source that has already completed).
+            dao.observeAll().recoveringFromBadRows(emptyList()) { e ->
+                say("Couldn't read some stored readings (${e.message ?: e.javaClass.simpleName}); showing nothing from them")
+            },
+            noteDao.observeAll().recoveringFromBadRows(emptyList()) { e ->
+                say("Couldn't read some stored notes (${e.message ?: e.javaClass.simpleName}); showing nothing from them")
+            },
+            period, syncing, backupStatus
+        ) { readings, notes, period, syncing, backup ->
             HistoryUiState(
                 period = period,
                 readings = filterByPeriod(readings, period, notes),
@@ -99,16 +112,7 @@ class HistoryViewModel(application: Application) : AndroidViewModel(application)
                 syncing = syncing,
                 backup = backup
             )
-        }
-            // Room's enum converters (Arm/NoteType) throw if a row holds a value the current
-            // build doesn't recognise (an out-of-band edit, or a restored older/newer database).
-            // Without this, that one bad row would kill this Flow for good — History/Log would
-            // silently stop updating until the app restarts — instead of just this emission.
-            .catch { e ->
-                say("Couldn't read some stored data (${e.message ?: e.javaClass.simpleName}); showing nothing from it")
-                emit(HistoryUiState())
-            }
-            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), HistoryUiState())
+        }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), HistoryUiState())
 
     init {
         viewModelScope.launch(Dispatchers.IO) {

@@ -12,6 +12,10 @@
     <!-- Cloud auto-backup is intentionally ON (user decision: losing readings is the real
          risk, not extraction). The rules files explicitly include the Room database and
          settings so backup coverage never silently changes as the app grows. -->
+    <!-- Cleartext (plain http://) is for the reading-scan feature only: a self-hosted vision
+         server (see ocr/VisionServerStore.kt) is typically a plain-http LAN address with no TLS
+         cert. Every other network call in the app (GitHub) already uses https:// explicitly, so
+         this doesn't weaken anything else. -->
     <application
         android:name=".BloodPressureApp"
         android:allowBackup="true"
@@ -22,7 +26,8 @@
         android:label="@string/app_name"
         android:roundIcon="@mipmap/ic_launcher"
         android:supportsRtl="true"
-        android:theme="@style/Theme.BloodPressureApp">
+        android:theme="@style/Theme.BloodPressureApp"
+        android:usesCleartextTraffic="true">
 
         <activity
             android:name=".MainActivity"

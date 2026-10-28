@@ -1,5 +1,9 @@
 package com.robcloud.bloodpressure.ui.capture
 
+import android.net.Uri
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.PickVisualMediaRequest
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.tween
@@ -18,14 +22,17 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowDownward
 import androidx.compose.material.icons.filled.ArrowUpward
 import androidx.compose.material.icons.filled.CalendarToday
+import androidx.compose.material.icons.filled.CameraAlt
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.Medication
+import androidx.compose.material.icons.filled.PhotoLibrary
 import androidx.compose.material.icons.filled.Schedule
 import androidx.compose.material.icons.automirrored.filled.TrendingFlat
 import androidx.compose.foundation.selection.toggleable
 import androidx.compose.material3.Card
 import androidx.compose.material3.Checkbox
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.ui.semantics.Role
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -74,6 +81,8 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.robcloud.bloodpressure.data.Arm
 import com.robcloud.bloodpressure.data.Reading
 import com.robcloud.bloodpressure.data.bpCategory
+import com.robcloud.bloodpressure.ocr.ScanStage
+import com.robcloud.bloodpressure.ocr.newOcrPhotoUri
 import com.robcloud.bloodpressure.ui.DIASTOLIC_MAX
 import com.robcloud.bloodpressure.ui.EqualWidthSegmentedRow
 import com.robcloud.bloodpressure.ui.Formatters
@@ -96,6 +105,7 @@ fun CaptureScreen(
     updateViewModel: UpdateViewModel = viewModel()
 ) {
     val state by viewModel.uiState.collectAsState()
+    val scanStage by viewModel.scanStage.collectAsState()
     val lastReading by viewModel.lastReading.collectAsState()
     val previousReading by viewModel.previousReading.collectAsState()
     val cachedRelease by updateViewModel.cachedRelease.collectAsState()
@@ -109,6 +119,33 @@ fun CaptureScreen(
     var savePulse by remember { mutableIntStateOf(0) }
     val diastolicFocus = remember { FocusRequester() }
     val heartRateFocus = remember { FocusRequester() }
+
+    // Holds the Uri the camera was asked to write to, between launching it and getting the
+    // success/failure callback — TakePicture() doesn't hand the Uri back itself.
+    var pendingPhotoUri by remember { mutableStateOf<Uri?>(null) }
+    val takePhotoLauncher = rememberLauncherForActivityResult(ActivityResultContracts.TakePicture()) { success ->
+        if (success) pendingPhotoUri?.let(viewModel::scanReading)
+    }
+    val pickPhotoLauncher = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri ->
+        uri?.let(viewModel::scanReading)
+    }
+    // What CaptureViewModel.scanReading captured as the model name when this scan started — not
+    // re-read live, so switching the active server mid-scan (About tab, another window) can't
+    // make the progress row describe the wrong one (see the ViewModel for why that matters).
+    val scanningModelName by viewModel.scanningModelName.collectAsState()
+
+    // Counts up once a second while actually waiting on the model (by far the slowest, most
+    // variable part), so a slow self-hosted model reads as "still working", not "stuck".
+    var waitingSeconds by remember { mutableIntStateOf(0) }
+    LaunchedEffect(scanStage) {
+        waitingSeconds = 0
+        if (scanStage == ScanStage.WAITING_FOR_REPLY) {
+            while (true) {
+                delay(1_000)
+                waitingSeconds++
+            }
+        }
+    }
 
     // Flags are consumed before the snackbar shows: showSnackbar suspends until it is dismissed,
     // and leaving the tab meanwhile would otherwise replay the haptic and message on return.
@@ -131,6 +168,13 @@ fun CaptureScreen(
         }
     }
 
+    LaunchedEffect(Unit) {
+        viewModel.uiState.map { it.scanFilled }.distinctUntilChanged().filter { it }.collect {
+            viewModel.consumeScanFilledFlag()
+            snackbarHostState.showSnackbar("Filled from photo — check the numbers before saving")
+        }
+    }
+
     state.crisisBp?.let { bp ->
         CrisisWarningDialog(bp = bp, onDismiss = viewModel::consumeCrisisWarning)
     }
@@ -145,6 +189,7 @@ fun CaptureScreen(
             if (event == Lifecycle.Event.ON_RESUME) {
                 viewModel.refreshTakenAt()
                 viewModel.refreshBackupStatus()
+                viewModel.refreshScanAvailability()
             }
         }
         lifecycleOwner.lifecycle.addObserver(observer)
@@ -174,6 +219,25 @@ fun CaptureScreen(
                 text = "New reading",
                 style = MaterialTheme.typography.headlineMedium
             )
+
+            // Hidden until a scan server is set up (About tab) — showing a button that can only
+            // ever error with "set up a scan server first" isn't worth the space on this form.
+            if (state.scanAvailable) {
+                ScanReadingRow(
+                    scanning = scanStage != null,
+                    onTakePhoto = {
+                        val uri = newOcrPhotoUri(context)
+                        pendingPhotoUri = uri
+                        takePhotoLauncher.launch(uri)
+                    },
+                    onPickPhoto = {
+                        pickPhotoLauncher.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
+                    }
+                )
+                scanStage?.let { stage ->
+                    ScanProgressRow(stage = stage, model = scanningModelName ?: "", waitingSeconds = waitingSeconds)
+                }
+            }
 
             Row(
                 horizontalArrangement = Arrangement.spacedBy(12.dp),
@@ -319,6 +383,54 @@ fun CaptureScreen(
         SnackbarHost(hostState = snackbarHostState) { data ->
             Snackbar(modifier = Modifier.padding(16.dp)) { Text(data.visuals.message) }
         }
+    }
+}
+
+/**
+ * Scans a monitor's display with the camera, or from an existing photo, and fills in the
+ * systolic/diastolic/heart rate fields from whatever it can read — a best-effort guess the user
+ * still has to check, not an auto-fill they can trust blindly (see [CaptureViewModel.scanReading]).
+ */
+@Composable
+private fun ScanReadingRow(scanning: Boolean, onTakePhoto: () -> Unit, onPickPhoto: () -> Unit, modifier: Modifier = Modifier) {
+    Row(
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        modifier = modifier.fillMaxWidth()
+    ) {
+        OutlinedButton(onClick = onTakePhoto, enabled = !scanning, modifier = Modifier.weight(1f)) {
+            Icon(Icons.Filled.CameraAlt, contentDescription = null, modifier = Modifier.padding(end = 8.dp))
+            Text("Scan reading")
+        }
+        OutlinedButton(onClick = onPickPhoto, enabled = !scanning) {
+            Icon(Icons.Filled.PhotoLibrary, contentDescription = "Choose a photo instead")
+        }
+    }
+}
+
+/**
+ * What [CaptureViewModel.scanReading] is doing right now, spelled out — a self-hosted model can
+ * take anywhere from a couple of seconds to the better part of a minute, and the biggest risk to
+ * trust in a background feature like this is it going quiet while working. [model] is shown as
+ * configured (not validated here); [waitingSeconds] only counts up during [ScanStage.WAITING_FOR_REPLY].
+ */
+@Composable
+private fun ScanProgressRow(stage: ScanStage, model: String, waitingSeconds: Int, modifier: Modifier = Modifier) {
+    Row(
+        horizontalArrangement = Arrangement.spacedBy(10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        modifier = modifier.fillMaxWidth()
+    ) {
+        CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
+        Text(
+            when (stage) {
+                ScanStage.PREPARING_PHOTO -> "Preparing the photo…"
+                ScanStage.SENDING -> "Sending to \"$model\"…"
+                ScanStage.WAITING_FOR_REPLY -> "Waiting for \"$model\"… ${waitingSeconds}s"
+            },
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
     }
 }
 

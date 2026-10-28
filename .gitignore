@@ -32,3 +32,6 @@ migration-backup-*
 /CLAUDE.md
 /docs/
 /SETUP.md
+
+# --- Personal Claude Code hook config, not team policy ---
+/.claude/settings.local.json

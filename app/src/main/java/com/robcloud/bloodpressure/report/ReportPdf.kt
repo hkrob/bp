@@ -5,6 +5,7 @@ import android.graphics.Canvas
 import android.graphics.Paint
 import android.graphics.Typeface
 import android.graphics.pdf.PdfDocument
+import androidx.compose.ui.graphics.toArgb
 import androidx.core.content.FileProvider
 import android.net.Uri
 import com.robcloud.bloodpressure.data.BpCategory
@@ -14,6 +15,7 @@ import com.robcloud.bloodpressure.data.Reading
 import com.robcloud.bloodpressure.data.bpCategory
 import com.robcloud.bloodpressure.data.groupIntoSittings
 import com.robcloud.bloodpressure.data.timeOfDayAverages
+import com.robcloud.bloodpressure.ui.history.categoryColor as statusColor
 import java.io.File
 import java.time.Instant
 import java.time.LocalDate
@@ -57,15 +59,11 @@ object ReportPdf {
     private const val COLOR_HR = 0xFFD98A8A.toInt()
     private const val COLOR_NOTE = 0xFF7E57C2.toInt()
 
-    // Matches ui/theme/Color.kt's StatusLow/StatusNormal/StatusElevated/StatusHigh exactly, so a
-    // reading isn't shown in a different shade in the report than everywhere else in the app.
-    // internal (not private) so ReportPdfCategoryColorTest can check that parity holds.
-    internal fun categoryColor(category: BpCategory): Int = when (category) {
-        BpCategory.LOW -> 0xFF2F80ED.toInt()
-        BpCategory.NORMAL -> 0xFF2E7D32.toInt()
-        BpCategory.ELEVATED, BpCategory.STAGE_1 -> 0xFFF9A825.toInt()
-        BpCategory.STAGE_2, BpCategory.CRISIS -> 0xFFD32F2F.toInt()
-    }
+    // Delegates to ui/history/ReadingsTable.kt's categoryColor (backed by ui/theme/Color.kt's
+    // StatusLow/StatusNormal/StatusElevated/StatusHigh) instead of keeping a separate copy of the
+    // mapping, so a reading can't end up shown in a different shade in the report than everywhere
+    // else in the app. internal (not private) so ReportPdfCategoryColorTest can check that holds.
+    internal fun categoryColor(category: BpCategory): Int = statusColor(category).toArgb()
 
     /**
      * Writes the report PDF into the app cache and returns a FileProvider content Uri for sharing.

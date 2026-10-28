@@ -2,13 +2,11 @@ package com.robcloud.bloodpressure.backup
 
 import android.content.Context
 import android.content.Intent
-import android.content.SharedPreferences
 import android.net.Uri
 import androidx.core.content.edit
 import androidx.documentfile.provider.DocumentFile
-import kotlinx.coroutines.channels.awaitClose
+import com.robcloud.bloodpressure.changes
 import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.callbackFlow
 import java.time.Instant
 import java.time.LocalDate
 
@@ -172,10 +170,5 @@ class BackupFolderStore(private val context: Context) {
     }
 
     /** Emits once on collection and again whenever any backup setting or sync status changes. */
-    fun changes(): Flow<Unit> = callbackFlow {
-        val listener = SharedPreferences.OnSharedPreferenceChangeListener { _, _ -> trySend(Unit) }
-        prefs.registerOnSharedPreferenceChangeListener(listener)
-        trySend(Unit)
-        awaitClose { prefs.unregisterOnSharedPreferenceChangeListener(listener) }
-    }
+    fun changes(): Flow<Unit> = prefs.changes()
 }

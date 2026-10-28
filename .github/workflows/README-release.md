@@ -35,7 +35,9 @@ never values.
 1. Bump `versionCode` and `versionName` in `app/build.gradle.kts`.
 2. Add a `CHANGELOG` entry for the new `versionName` in `AboutScreen.kt`. The workflow reads
    the release notes from it and fails if it is missing or empty. Write literal characters (`—`,
-   `·`), not Kotlin `\u` escapes: only `\"` and `\\` are unescaped.
+   `·`), not Kotlin `\u` escapes: only `\"` and `\\` are unescaped. Each bullet must be a single
+   string literal — the workflow's extractor only matches `"..."`, not `"a" + "b"` — so don't
+   wrap a long line with `+` even though Kotlin allows it.
 3. If the Room schema changed, commit the new `app/schemas/.../<version>.json` together with its
    `Migration`. The app refuses to open a database it has no migration for.
 4. Merge to `main`.
