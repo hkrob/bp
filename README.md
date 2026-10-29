@@ -13,7 +13,8 @@ Access Framework — no account sign-in inside the app.
 | <img src="screenshots/01-add-reading.png" width="170" alt="Add reading tab"> | <img src="screenshots/02-history.png" width="170" alt="History tab with trend chart"> | <img src="screenshots/03-log.png" width="170" alt="Log tab"> | <img src="screenshots/04-about.png" width="170" alt="About tab with update check"> | <img src="screenshots/05-console-theme.png" width="170" alt="Console theme"> |
 | Entry form with irregular-heartbeat flag | Averages, morning/evening split and trend chart | Readings and notes in one time-ordered list | Backup status and in-app update check | Readings grouped into sittings |
 
-*Screenshots use demo data, not real readings.*
+*Screenshots use demo data, not real readings. They were taken from a debug build (hence the
+`-debug` suffix on the version in the About tab) on an emulator.*
 
 ## Features
 
@@ -34,7 +35,8 @@ Access Framework — no account sign-in inside the app.
   changes, time-zone changes and clock changes. The app warns you when notifications are blocked.
 - Automatic CSV backup to a folder you choose, with daily snapshots (see below).
 - CSV import/export and a shareable PDF "doctor's report".
-- Home-screen widget showing the last reading.
+- Home-screen widget showing the last reading, coloured by its category (white for normal) and
+  marked IRR when the monitor flagged an irregular heartbeat.
 - Four themes (System, Light, Dark, Console) and an in-app update check via GitHub Releases.
 
 ## Backup and moving phones
@@ -115,9 +117,14 @@ deliberately excluded: it resolves to wallpaper-derived dynamic colour and is no
 Plain `testDebugUnitTest` renders the snapshot tests without comparing them; only
 `verifyPaparazziDebug` gates them.
 
+## Contributing
+
+[`AGENTS.md`](AGENTS.md) covers the ground rules, conventions, screenshot process and repository
+layout for anyone working on the code, human or otherwise.
+
 ## Releases & updates
 
-Each release is published on GitHub with a tag matching the version name (e.g. `v2.6.0`) and the
+Each release is published on GitHub with a tag matching the version name (e.g. `v2.9.0`) and the
 release-signed `BPTracker-vX.Y.Z.apk` attached as an asset. The app's About tab can check for and
 install newer releases. Android only installs an update signed with the same key as the current
 install, so only release-signed APKs are published.
