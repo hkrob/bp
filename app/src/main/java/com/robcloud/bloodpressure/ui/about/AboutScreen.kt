@@ -84,6 +84,9 @@ private const val FEEDBACK_EMAIL = "android.bp@robcloud.qzz.io"
 
 /** Newest first; keep the three most recent versions here (older entries drop off). */
 private val CHANGELOG = listOf(
+    "2.11.2" to listOf(
+        "Test release: no changes to the app itself. Published to check the release pipeline end to end.",
+    ),
     "2.11.1" to listOf(
         "Deleting a saved scan server now asks first, since it can't be undone — and warns you if it's the active one, since another saved server (possibly a cloud one) would silently take over.",
         "Added a warning when a saved server's address isn't encrypted (http, not https) and has an API key set — that key would otherwise be sent in plain text.",
@@ -95,10 +98,6 @@ private val CHANGELOG = listOf(
     "2.11.0" to listOf(
         "New: save more than one reading-scan server and switch between them — e.g. a self-hosted model at home and a cloud provider's free tier for when you're out. Set up from the About tab's \"Reading scan\" card.",
         "An existing single scan-server setup carries over automatically as your first saved server.",
-    ),
-    "2.10.2" to listOf(
-        "The Add reading tab's Scan button is now hidden until a scan server is set up on the About tab, instead of always showing and erroring if you tapped it first.",
-        "Scanning now shows what it's doing — preparing the photo, sending it, then waiting for the model, with a running count of seconds — instead of a single small spinner.",
     ),
 )
 
