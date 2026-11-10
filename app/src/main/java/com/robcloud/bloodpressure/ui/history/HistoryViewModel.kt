@@ -286,6 +286,7 @@ class HistoryViewModel(application: Application) : AndroidViewModel(application)
                     store.set(uri)
                     store.displayName()
                 }
+                BackupSyncWorker.scheduleDaily(app)
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {

@@ -19,7 +19,12 @@ import java.io.IOException
 import java.net.HttpURLConnection
 import java.net.URL
 
-private const val TIMEOUT_MS = 30_000
+private const val CONNECT_TIMEOUT_MS = 15_000
+
+// A self-hosted model that isn't loaded yet has to be read from disk before it can answer, which
+// alone can take longer than the 30 s this used to allow — the scan then failed on exactly the
+// first use of the day. The progress row counts the seconds, so a long wait isn't a silent one.
+private const val READ_TIMEOUT_MS = 120_000
 
 // Most vision models cap their effective input resolution well below a modern phone photo (the
 // sample this was built against was 2129x2501) and resize down to it internally regardless — so
@@ -55,12 +60,23 @@ enum class ScanStage {
 /**
  * A fresh destination for the camera to write a scan photo to (cacheDir/ocr, see file_paths.xml),
  * as a FileProvider content Uri the system camera app can write to without this app granting it
- * broader file access.
+ * broader file access. Clears out any earlier scan photo first — one left by a cancelled camera
+ * capture, or by a scan the app was killed during — so photos of the monitor don't pile up.
  */
 fun newOcrPhotoUri(context: Context): Uri {
     val dir = File(context.cacheDir, "ocr").apply { mkdirs() }
+    dir.listFiles()?.forEach { it.delete() }
     val file = File(dir, "scan-${System.currentTimeMillis()}.jpg")
     return FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", file)
+}
+
+/**
+ * Deletes a scan photo this app took (see [newOcrPhotoUri]) once it has been read. A photo picked
+ * from the gallery belongs to the user and is left alone.
+ */
+fun discardOcrPhoto(context: Context, uri: Uri) {
+    if (uri.authority != "${context.packageName}.fileprovider") return
+    runCatching { context.contentResolver.delete(uri, null, null) }
 }
 
 /**
@@ -119,8 +135,8 @@ suspend fun scanReadingPhoto(
         doOutput = true
         setRequestProperty("Content-Type", "application/json")
         config.apiKey?.let { setRequestProperty("Authorization", "Bearer $it") }
-        connectTimeout = TIMEOUT_MS
-        readTimeout = TIMEOUT_MS
+        connectTimeout = CONNECT_TIMEOUT_MS
+        readTimeout = READ_TIMEOUT_MS
     }
     try {
         onStage(ScanStage.SENDING)
@@ -132,10 +148,12 @@ suspend fun scanReadingPhoto(
         if (code !in 200..299) {
             throw IOException("Scan server answered with HTTP $code: ${responseText.take(200)}")
         }
-        val reply = JSONObject(responseText)
+        val message = JSONObject(responseText)
             .getJSONArray("choices").getJSONObject(0)
-            .getJSONObject("message").getString("content")
-        parseVisionReply(reply)
+            .getJSONObject("message")
+        // Null when a reasoning model spent its whole reply thinking: nothing was read, which
+        // parseVisionReply reports as such, rather than a JSON error the user can't act on.
+        parseVisionReply(if (message.isNull("content")) "" else message.getString("content"))
     } finally {
         conn.disconnect()
     }

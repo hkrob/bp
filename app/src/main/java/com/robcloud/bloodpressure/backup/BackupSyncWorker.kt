@@ -76,15 +76,17 @@ class BackupSyncWorker(context: Context, params: WorkerParameters) : CoroutineWo
 
         /**
          * Once-a-day background sync, independent of the after-save sync. Safe to call on
-         * every app start — KEEP means an already-scheduled job is left alone rather than
-         * restarted, so the daily cadence doesn't reset each launch.
+         * every app start, and called again when the backup folder changes — UPDATE keeps an
+         * already-scheduled job's cadence but replaces its constraints, which depend on the
+         * folder (see [constraints]). With KEEP, a job first scheduled before any folder was
+         * chosen went on waiting for a network connection even after a local folder was picked.
          */
         fun scheduleDaily(context: Context) {
             val request = PeriodicWorkRequestBuilder<BackupSyncWorker>(1, TimeUnit.DAYS)
                 .setConstraints(constraints(context))
                 .build()
             WorkManager.getInstance(context)
-                .enqueueUniquePeriodicWork(DAILY_SYNC_WORK_NAME, ExistingPeriodicWorkPolicy.KEEP, request)
+                .enqueueUniquePeriodicWork(DAILY_SYNC_WORK_NAME, ExistingPeriodicWorkPolicy.UPDATE, request)
         }
     }
 }

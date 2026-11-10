@@ -65,4 +65,22 @@ class ReadingOcrTest {
         assertEquals(76, result.diastolic)
         assertNull(result.heartRate)
     }
+
+    @Test
+    fun `numbers in a reasoning model's thinking are not taken for the answer`() {
+        val result = parseVisionReply("<think>The top number looks like 113 or 118, below it 76.</think>\n118 76 82")
+        assertEquals(118, result.systolic)
+        assertEquals(76, result.diastolic)
+        assertEquals(82, result.heartRate)
+    }
+
+    @Test
+    fun `a reply cut off while still thinking reads as nothing`() {
+        assertTrue(parseVisionReply("<think>The display shows 118 over 76 and").isEmpty)
+    }
+
+    @Test
+    fun `an empty reply reads as nothing`() {
+        assertTrue(parseVisionReply("").isEmpty)
+    }
 }
