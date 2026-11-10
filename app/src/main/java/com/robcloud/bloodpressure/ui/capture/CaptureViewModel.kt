@@ -19,6 +19,7 @@ import com.robcloud.bloodpressure.ocr.ReadingOcrResult
 import com.robcloud.bloodpressure.ocr.ScanStage
 import com.robcloud.bloodpressure.ocr.VisionServerNotConfiguredException
 import com.robcloud.bloodpressure.ocr.VisionServerStore
+import com.robcloud.bloodpressure.ocr.discardOcrPhoto
 import com.robcloud.bloodpressure.ocr.scanReadingPhoto
 import com.robcloud.bloodpressure.ui.validateReading
 import com.robcloud.bloodpressure.ui.validateTakenAt
@@ -290,6 +291,7 @@ class CaptureViewModel(
             } catch (e: Exception) {
                 update { it.copy(errorMessage = "Couldn't read that photo: ${e.message ?: e.javaClass.simpleName}") }
             } finally {
+                discardOcrPhoto(app, uri)
                 scanningReading = false
                 _scanStage.value = null
                 _scanningModelName.value = null

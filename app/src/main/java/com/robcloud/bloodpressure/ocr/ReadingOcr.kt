@@ -11,15 +11,26 @@ data class ReadingOcrResult(val systolic: Int?, val diastolic: Int?, val heartRa
 private val NUMBER = Regex("\\d+")
 
 /**
+ * A reasoning model's working, which some servers (Ollama with qwen3 or deepseek-r1, say) return
+ * inline ahead of the answer. An opening tag with no close means the reply was cut off mid-thought,
+ * so everything after it is working too.
+ */
+private val THINKING = Regex("<think(ing)?>.*?(</think(ing)?>|\\z)", setOf(RegexOption.IGNORE_CASE, RegexOption.DOT_MATCHES_ALL))
+
+/**
  * Parses a vision model's reply — asked for three numbers, systolic/diastolic/heart rate in that
  * order, 0 for anything it couldn't read (see [SCAN_PROMPT] in ReadingScanner.kt) — into a
  * result. Never trusts the reply blindly: every value is still checked against the same ranges
  * [com.robcloud.bloodpressure.ui.validateReading] accepts, and a 0 (or a missing number) becomes
  * null, not a guess. Also corrects a systolic/diastolic pair the model got the wrong way round —
  * the higher one is always systolic, which doesn't depend on reading the display correctly.
+ *
+ * Numbers inside a reasoning model's thinking are ignored: the working usually mentions other
+ * figures ("the top number looks like 118 or 113") before the answer, and taking the first three
+ * numbers from that filled the form with values the model never settled on.
  */
 internal fun parseVisionReply(reply: String): ReadingOcrResult {
-    val numbers = NUMBER.findAll(reply).mapNotNull { it.value.toIntOrNull() }.toList()
+    val numbers = NUMBER.findAll(reply.replace(THINKING, " ")).mapNotNull { it.value.toIntOrNull() }.toList()
     val rawSystolic = numbers.getOrNull(0)?.takeIf { it != 0 }
     val rawDiastolic = numbers.getOrNull(1)?.takeIf { it != 0 }
     val rawHeartRate = numbers.getOrNull(2)?.takeIf { it != 0 }

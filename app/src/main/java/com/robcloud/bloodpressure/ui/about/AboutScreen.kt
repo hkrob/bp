@@ -84,6 +84,13 @@ private const val FEEDBACK_EMAIL = "android.bp@robcloud.qzz.io"
 
 /** Newest first; keep the three most recent versions here (older entries drop off). */
 private val CHANGELOG = listOf(
+    "2.11.3" to listOf(
+        "Fixed: scanning a reading with a reasoning model (one that thinks out loud before answering) could fill in numbers from its thinking instead of its answer.",
+        "Scanning now waits up to two minutes for a slow or still-loading self-hosted model, instead of giving up after 30 seconds.",
+        "A photo taken to scan a reading is deleted as soon as it has been read, and old report PDFs are cleared when a new one is made.",
+        "Fixed: after choosing an on-device backup folder, the daily backup could still wait for an internet connection it didn't need.",
+        "The PDF report lists notes from the same day in time order.",
+    ),
     "2.11.2" to listOf(
         "Test release: no changes to the app itself. Published to check the release pipeline end to end.",
     ),
@@ -94,10 +101,6 @@ private val CHANGELOG = listOf(
         "Fixed: a corrupted saved server could make every other saved server disappear the next time any of them changed.",
         "Fixed: the \"Add a server\" dialog could lose everything typed into it if the app was interrupted while you were away copying an API key.",
         "Various other reliability fixes under the hood.",
-    ),
-    "2.11.0" to listOf(
-        "New: save more than one reading-scan server and switch between them — e.g. a self-hosted model at home and a cloud provider's free tier for when you're out. Set up from the About tab's \"Reading scan\" card.",
-        "An existing single scan-server setup carries over automatically as your first saved server.",
     ),
 )
 

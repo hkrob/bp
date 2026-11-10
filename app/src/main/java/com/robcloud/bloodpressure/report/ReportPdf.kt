@@ -79,7 +79,7 @@ object ReportPdf {
         val doc = PdfDocument()
         val ascending = readings.sortedBy { it.takenAt }
         val newestFirst = readings.sortedByDescending { it.takenAt }
-        val notesNewestFirst = notes.sortedByDescending { it.date }
+        val notesNewestFirst = notes.sortedByDescending { it.date.atTime(it.time) }
 
         val ctx = PageContext(doc)
         ctx.newPage()
@@ -92,6 +92,9 @@ object ReportPdf {
 
         val dir = File(context.cacheDir, "reports").apply { mkdirs() }
         val file = File(dir, "BP-Report-${fileStampFmt.format(Instant.now())}.pdf")
+        // Earlier reports have been shared already; keeping every day's copy only leaves health
+        // data sitting in the cache.
+        dir.listFiles()?.filter { it != file }?.forEach { it.delete() }
         try {
             file.outputStream().use { doc.writeTo(it) }
         } finally {
@@ -200,7 +203,7 @@ object ReportPdf {
             if (avg == null) continue
             ctx.canvas.drawText(name, MARGIN, ctx.y + 12f, label)
             ctx.canvas.drawText(
-                "${avg.systolic}/${avg.diastolic} mmHg   ·   ${avg.heartRate} bpm   ·   ${avg.count} readings",
+                "${avg.systolic}/${avg.diastolic} mmHg   ·   ${avg.heartRate} bpm   ·   ${avg.count} ${if (avg.count == 1) "reading" else "readings"}",
                 MARGIN + 130f, ctx.y + 12f, value
             )
             ctx.canvas.drawText(avg.category.label, MARGIN + 390f, ctx.y + 12f, paint(categoryColor(avg.category), 12f, bold = true))
